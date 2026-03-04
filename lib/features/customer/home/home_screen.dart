@@ -38,6 +38,17 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// BUILD IMAGE URL
+  String buildImageUrl(String? image) {
+    if (image == null || image.isEmpty) return "";
+
+    if (image.startsWith("http")) {
+      return image; // Supabase image
+    }
+
+    return "http://10.0.2.2:5000$image"; // Local image
+  }
+
   @override
   Widget build(BuildContext context) {
     if (isLoading) {
@@ -51,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
 
           /// ===============================
-          /// 🔹 ALL BRANCH SECTION
+          /// 🔹 ALL BRANCH
           /// ===============================
           const Text(
             "All Branch",
@@ -87,7 +98,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
+
                       const SizedBox(height: 6),
+
                       Text(
                         branch['branch_name'],
                         overflow: TextOverflow.ellipsis,
@@ -103,7 +116,7 @@ class _HomeScreenState extends State<HomeScreen> {
           const SizedBox(height: 25),
 
           /// ===============================
-          /// 🔹 POPULAR FOOD SECTION
+          /// 🔹 POPULAR FOOD
           /// ===============================
           const Text(
             "Popular Food",
@@ -117,8 +130,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
           Column(
             children: menuItems.map((item) {
+
               final bool isAvailable =
                   item['status'].toString().toLowerCase() == "available";
+
+              final imageUrl = buildImageUrl(item['image']);
 
               return Container(
                 margin: const EdgeInsets.only(bottom: 15),
@@ -127,21 +143,36 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: Colors.teal.shade200),
                 ),
+
                 child: Row(
                   children: [
 
-                    /// 🔹 IMAGE
+                    /// IMAGE
                     ClipRRect(
                       borderRadius: const BorderRadius.only(
                         topLeft: Radius.circular(12),
                         bottomLeft: Radius.circular(12),
                       ),
-                      child: item['image'] != null
+
+                      child: imageUrl.isNotEmpty
                           ? Image.network(
-                              "http://10.0.2.2:5000${item['image']}",
+                              imageUrl,
                               width: 100,
                               height: 110,
                               fit: BoxFit.cover,
+
+                              errorBuilder: (context, error, stackTrace) {
+                                return Container(
+                                  width: 100,
+                                  height: 110,
+                                  color: Colors.grey,
+                                  child: const Icon(
+                                    Icons.fastfood,
+                                    size: 40,
+                                    color: Colors.white,
+                                  ),
+                                );
+                              },
                             )
                           : Container(
                               width: 100,
@@ -155,10 +186,11 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                     ),
 
-                    /// 🔹 DETAILS
+                    /// DETAILS
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.all(12),
+
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -206,9 +238,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
                             const SizedBox(height: 10),
 
-                            /// ADD TO CART BUTTON
+                            /// ADD TO CART
                             Align(
                               alignment: Alignment.centerRight,
+
                               child: ElevatedButton(
                                 style: ElevatedButton.styleFrom(
                                   backgroundColor: Colors.teal,
@@ -219,9 +252,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                         BorderRadius.circular(8),
                                   ),
                                 ),
+
                                 onPressed: isAvailable
                                     ? () async {
                                         try {
+
                                           await HomeService.addToCart(
                                               item['id']);
 
@@ -236,7 +271,9 @@ class _HomeScreenState extends State<HomeScreen> {
                                                   Colors.green,
                                             ),
                                           );
+
                                         } catch (e) {
+
                                           ScaffoldMessenger.of(context)
                                               .showSnackBar(
                                             SnackBar(
@@ -249,6 +286,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                         }
                                       }
                                     : null,
+
                                 child: const Text("Add"),
                               ),
                             ),
@@ -259,6 +297,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ],
                 ),
               );
+
             }).toList(),
           ),
         ],

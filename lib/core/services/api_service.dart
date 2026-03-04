@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'dart:io';
 class ApiService {
   static const String baseUrl = "http://10.0.2.2:5000/api";
 
@@ -84,4 +84,40 @@ class ApiService {
 
     return data;
   }
+
+  static Future<dynamic> multipart(
+  String endpoint, {
+  Map<String, String>? fields,
+  File? file,
+  String? fileField,
+}) async {
+
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('token');
+
+  final uri = Uri.parse("$baseUrl$endpoint");
+
+  var request = http.MultipartRequest("PUT", uri);
+
+  if (token != null) {
+    request.headers['Authorization'] = "Bearer $token";
+  }
+
+  /// add text fields
+  if (fields != null) {
+    request.fields.addAll(fields);
+  }
+
+  /// add image file
+  if (file != null && fileField != null) {
+    request.files.add(
+      await http.MultipartFile.fromPath(fileField, file.path),
+    );
+  }
+
+  final streamedResponse = await request.send();
+  final response = await http.Response.fromStream(streamedResponse);
+
+  return _handleResponse(response);
+}
 }

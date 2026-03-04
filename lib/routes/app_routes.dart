@@ -1,3 +1,4 @@
+
 class AppRoutes {
   // Auth
   static const login = '/login';
@@ -12,6 +13,7 @@ class AppRoutes {
   static const orders = '/orders';
   static const profile = '/profile';
   static const orderOnline = '/order-online';
+  static const editProfile = '/edit-profile';
   // static const booking = '/booking';
   // Staff
   static const staffDashboard = '/staff-dashboard';

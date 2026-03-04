@@ -36,7 +36,7 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
 
       final items = data['data']['menuItems'];
 
-      /// ✅ FIX duplicate categories problem
+      /// remove duplicate categories
       final Map<int, dynamic> uniqueMap = {};
       for (var item in items) {
         final cat = item['category'];
@@ -52,6 +52,17 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
       debugPrint("Branch menu error: $e");
       setState(() => isLoading = false);
     }
+  }
+
+  /// FIX IMAGE URL
+  String buildImageUrl(String? image) {
+    if (image == null || image.isEmpty) return "";
+
+    if (image.startsWith("http")) {
+      return image; // Supabase image
+    }
+
+    return "http://10.0.2.2:5000$image"; // local image
   }
 
   List get filteredItems {
@@ -80,9 +91,7 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
         child: Column(
           children: [
 
-            /// ===============================
             /// CATEGORY FILTER
-            /// ===============================
             SizedBox(
               height: 45,
               child: ListView.builder(
@@ -127,19 +136,20 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
 
             const SizedBox(height: 20),
 
-            /// ===============================
             /// MENU LIST
-            /// ===============================
             Expanded(
               child: filteredItems.isEmpty
                   ? const Center(child: Text("No items found"))
                   : ListView.builder(
                       itemCount: filteredItems.length,
                       itemBuilder: (context, index) {
+
                         final item = filteredItems[index];
                         final bool isAvailable =
                             item['status'].toString().toLowerCase() ==
                                 "available";
+
+                        final imageUrl = buildImageUrl(item['image']);
 
                         return Container(
                           margin: const EdgeInsets.only(bottom: 15),
@@ -155,6 +165,7 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                               ),
                             ],
                           ),
+
                           child: Row(
                             children: [
 
@@ -162,12 +173,24 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                               ClipRRect(
                                 borderRadius:
                                     BorderRadius.circular(10),
-                                child: item['image'] != null
+                                child: imageUrl.isNotEmpty
                                     ? Image.network(
-                                        "http://10.0.2.2:5000${item['image']}",
+                                        imageUrl,
                                         width: 80,
                                         height: 80,
                                         fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                          return Container(
+                                            width: 80,
+                                            height: 80,
+                                            color: Colors.grey,
+                                            child: const Icon(
+                                              Icons.fastfood,
+                                              color: Colors.white,
+                                            ),
+                                          );
+                                        },
                                       )
                                     : Container(
                                         width: 80,
@@ -225,6 +248,7 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                               /// ACTIONS
                               Column(
                                 children: [
+
                                   IconButton(
                                     icon: const Icon(
                                       Icons.add_shopping_cart,
@@ -247,8 +271,7 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                                                   content: Text(
                                                       "Added to cart"),
                                                   backgroundColor:
-                                                      Colors
-                                                          .green,
+                                                      Colors.green,
                                                 ),
                                               );
                                             } catch (e) {
@@ -256,8 +279,8 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                                                       context)
                                                   .showSnackBar(
                                                 SnackBar(
-                                                  content: Text(
-                                                      "Error: $e"),
+                                                  content:
+                                                      Text("Error: $e"),
                                                   backgroundColor:
                                                       Colors.red,
                                                 ),

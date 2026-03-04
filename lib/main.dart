@@ -8,7 +8,7 @@ import 'features/admin/admin_dashboard_screen.dart';
 import 'features/customer/widgets/bottom_nav_bar.dart';
 import 'features/customer/orders/order_online_screen.dart'; // ✅ ADD THIS
 import 'features/customer/booking/booking_screen.dart';
-
+import 'features/customer/profile/edit_profile_screen.dart';
 void main() {
   runApp(const MyApp());
 }
@@ -30,7 +30,7 @@ class MyApp extends StatelessWidget {
 
         // ✅ ADD THIS
         AppRoutes.booking: (context) => const BookingFormScreen(),
-
+        AppRoutes.editProfile: (context) => const EditProfileScreen(),
         AppRoutes.reservationQR: (context) => const ReservationQRPaymentScreen(
               qrString: "",
               md5: "",

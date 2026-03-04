@@ -16,7 +16,18 @@ class MenuDetailScreen extends StatefulWidget {
 class _MenuDetailScreenState extends State<MenuDetailScreen> {
   int quantity = 1;
 
-  /// ⭐ Build dynamic rating stars
+  /// BUILD IMAGE URL
+  String buildImageUrl(String? image) {
+    if (image == null || image.isEmpty) return "";
+
+    if (image.startsWith("http")) {
+      return image; // Supabase image
+    }
+
+    return "http://10.0.2.2:5000$image"; // Local image
+  }
+
+  /// RATING STARS
   Widget buildRatingStars(String ratingString) {
     final rating = double.tryParse(ratingString) ?? 0;
     final fullStars = rating.floor();
@@ -41,7 +52,10 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
 
     final rating = item['average_rating'] ?? "0";
     final totalRatings = item['total_ratings'] ?? "0";
-    final isAvailable = item['status'] == "available";
+    final isAvailable =
+        item['status'].toString().toLowerCase() == "available";
+
+    final imageUrl = buildImageUrl(item['image']);
 
     return Scaffold(
       appBar: AppBar(
@@ -56,12 +70,35 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
             /// IMAGE
             ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: Image.network(
-                "http://10.0.2.2:5000${item['image']}",
-                height: 220,
-                width: double.infinity,
-                fit: BoxFit.cover,
-              ),
+              child: imageUrl.isNotEmpty
+                  ? Image.network(
+                      imageUrl,
+                      height: 220,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return Container(
+                          height: 220,
+                          width: double.infinity,
+                          color: Colors.grey,
+                          child: const Icon(
+                            Icons.fastfood,
+                            size: 60,
+                            color: Colors.white,
+                          ),
+                        );
+                      },
+                    )
+                  : Container(
+                      height: 220,
+                      width: double.infinity,
+                      color: Colors.grey,
+                      child: const Icon(
+                        Icons.fastfood,
+                        size: 60,
+                        color: Colors.white,
+                      ),
+                    ),
             ),
 
             const SizedBox(height: 20),
@@ -77,7 +114,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
 
-                  /// Name + Price
+                  /// NAME + PRICE
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -101,15 +138,16 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
 
                   const SizedBox(height: 10),
 
-                  /// Status
+                  /// STATUS
                   Row(
                     children: [
                       const Text("Status: "),
                       Text(
                         isAvailable ? "Available" : "Unavailable",
                         style: TextStyle(
-                          color:
-                              isAvailable ? Colors.green : Colors.red,
+                          color: isAvailable
+                              ? Colors.green
+                              : Colors.red,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -118,7 +156,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
 
                   const SizedBox(height: 8),
 
-                  /// Rating
+                  /// RATING
                   Row(
                     children: [
                       buildRatingStars(rating),
@@ -159,7 +197,7 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
             Row(
               children: [
 
-                /// Quantity Selector
+                /// QUANTITY SELECTOR
                 Container(
                   decoration: BoxDecoration(
                     border: Border.all(color: Colors.teal),
@@ -215,10 +253,8 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
                           ScaffoldMessenger.of(context)
                               .showSnackBar(
                             const SnackBar(
-                              content:
-                                  Text("Added to cart"),
-                              backgroundColor:
-                                  Colors.green,
+                              content: Text("Added to cart"),
+                              backgroundColor: Colors.green,
                             ),
                           );
                         }

@@ -1,0 +1,10 @@
+{
+  "appTitle": "Tos Nham",
+  "login": "Login",
+  "register": "Register",
+  "home": "Home",
+  "profile": "Profile",
+  "orderOnline": "Order Online",
+  "reservation": "Reservation",
+  "cart": "Cart"
+}

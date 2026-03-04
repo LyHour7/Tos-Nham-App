@@ -20,6 +20,17 @@ class _CartScreenState extends State<CartScreen> {
     fetchCart();
   }
 
+  /// FIX IMAGE URL (SUPABASE + LOCAL)
+  String buildImageUrl(String? image) {
+    if (image == null || image.isEmpty) return "";
+
+    if (image.startsWith("http")) {
+      return image; // Supabase image
+    }
+
+    return "http://10.0.2.2:5000$image"; // Local backend
+  }
+
   Future<void> fetchCart() async {
     try {
       final data = await ApiService.get("/cart");
@@ -49,15 +60,14 @@ class _CartScreenState extends State<CartScreen> {
     if (selectedBranchId == null) return cartItems;
 
     return cartItems.where((item) {
-      return item['menuItem']?['branch']?['id'] ==
-          selectedBranchId;
+      return item['menuItem']?['branch']?['id'] == selectedBranchId;
     }).toList();
   }
 
   double get total {
     return filteredItems.fold(0.0, (sum, item) {
       final price =
-          double.tryParse(item['menuItem']['price']) ?? 0.0;
+          double.tryParse(item['menuItem']['price'].toString()) ?? 0.0;
       return sum + (price * item['quantity']);
     });
   }
@@ -86,19 +96,27 @@ class _CartScreenState extends State<CartScreen> {
     updateQuantity(item, originalIndex, currentQty + 1);
   }
 
-  void decreaseQty(int index) {
-    final item = filteredItems[index];
-    final originalIndex = cartItems.indexOf(item);
+ void decreaseQty(int index) async {
+  final item = filteredItems[index];
+  final originalIndex = cartItems.indexOf(item);
 
-    final currentQty = cartItems[originalIndex]['quantity'];
-    if (currentQty <= 1) return;
+  final currentQty = cartItems[originalIndex]['quantity'];
 
-    updateQuantity(item, originalIndex, currentQty - 1);
+  if (currentQty <= 1) {
+    /// remove item from cart
+    await ApiService.delete("/cart/${item['menuItem']['id']}");
+
+    setState(() {
+      cartItems.removeAt(originalIndex);
+    });
+
+    return;
   }
 
-  /// ===============================
-  /// SHOW PAYMENT OPTIONS
-  /// ===============================
+  updateQuantity(item, originalIndex, currentQty - 1);
+}
+
+  /// PAYMENT OPTIONS
   void showPaymentOptions() {
     showModalBottomSheet(
       context: context,
@@ -126,15 +144,11 @@ class _CartScreenState extends State<CartScreen> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal,
-                  minimumSize:
-                      const Size(double.infinity, 45),
+                  minimumSize: const Size(double.infinity, 45),
                 ),
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.pushNamed(
-                    context,
-                    '/booking',
-                  );
+                  Navigator.pushNamed(context, '/booking');
                 },
                 child: const Text("Booking"),
               ),
@@ -144,15 +158,11 @@ class _CartScreenState extends State<CartScreen> {
               ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.teal,
-                  minimumSize:
-                      const Size(double.infinity, 45),
+                  minimumSize: const Size(double.infinity, 45),
                 ),
                 onPressed: () {
                   Navigator.pop(context);
-                  Navigator.pushNamed(
-                    context,
-                    '/order-online',
-                  );
+                  Navigator.pushNamed(context, '/order-online');
                 },
                 child: const Text("Order Online"),
               ),
@@ -167,6 +177,7 @@ class _CartScreenState extends State<CartScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     if (isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -178,11 +189,13 @@ class _CartScreenState extends State<CartScreen> {
         title: const Text("Start your booking"),
         backgroundColor: Colors.teal,
       ),
+
       body: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
 
+            /// BRANCH FILTER
             DropdownButtonFormField<int>(
               value: selectedBranchId,
               hint: const Text("List Branch"),
@@ -190,13 +203,11 @@ class _CartScreenState extends State<CartScreen> {
                 filled: true,
                 fillColor: Colors.teal.shade50,
                 border: OutlineInputBorder(
-                  borderRadius:
-                      BorderRadius.circular(8),
+                  borderRadius: BorderRadius.circular(8),
                   borderSide: BorderSide.none,
                 ),
               ),
-              items: branches
-                  .map<DropdownMenuItem<int>>((branch) {
+              items: branches.map<DropdownMenuItem<int>>((branch) {
                 return DropdownMenuItem<int>(
                   value: branch['id'],
                   child: Text(branch['branch_name']),
@@ -211,136 +222,103 @@ class _CartScreenState extends State<CartScreen> {
 
             const SizedBox(height: 20),
 
+            /// CART ITEMS
             Expanded(
               child: filteredItems.isEmpty
-                  ? const Center(
-                      child: Text("Cart is empty"))
+                  ? const Center(child: Text("Cart is empty"))
                   : ListView.builder(
                       itemCount: filteredItems.length,
-                      itemBuilder:
-                          (context, index) {
-                        final item =
-                            filteredItems[index];
-                        final menu =
-                            item['menuItem'];
-                        final qty =
-                            item['quantity'];
+                      itemBuilder: (context, index) {
+
+                        final item = filteredItems[index];
+                        final menu = item['menuItem'];
+                        final qty = item['quantity'];
 
                         return Container(
-                          margin:
-                              const EdgeInsets.only(
-                                  bottom: 15),
-                          padding:
-                              const EdgeInsets.all(
-                                  12),
+                          margin: const EdgeInsets.only(bottom: 15),
+                          padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             border: Border.all(
-                                color: Colors
-                                    .teal.shade200),
-                            borderRadius:
-                                BorderRadius
-                                    .circular(12),
+                                color: Colors.teal.shade200),
+                            borderRadius: BorderRadius.circular(12),
                           ),
+
                           child: Row(
                             children: [
 
+                              /// IMAGE
                               ClipRRect(
-                                borderRadius:
-                                    BorderRadius
-                                        .circular(8),
-                                child:
-                                    menu['image'] !=
-                                            null
-                                        ? Image
-                                            .network(
-                                            "http://10.0.2.2:5000${menu['image']}",
+                                borderRadius: BorderRadius.circular(8),
+                                child: menu['image'] != null
+                                    ? Image.network(
+                                        buildImageUrl(menu['image']),
+                                        width: 90,
+                                        height: 90,
+                                        fit: BoxFit.cover,
+                                        errorBuilder:
+                                            (context, error, stackTrace) {
+                                          return Container(
                                             width: 90,
                                             height: 90,
-                                            fit: BoxFit
-                                                .cover,
-                                          )
-                                        : Container(
-                                            width: 90,
-                                            height:
-                                                90,
-                                            color: Colors
-                                                .grey,
+                                            color: Colors.grey,
                                             child: const Icon(
-                                                Icons
-                                                    .fastfood),
-                                          ),
+                                                Icons.fastfood),
+                                          );
+                                        },
+                                      )
+                                    : Container(
+                                        width: 90,
+                                        height: 90,
+                                        color: Colors.grey,
+                                        child: const Icon(Icons.fastfood),
+                                      ),
                               ),
 
-                              const SizedBox(
-                                  width: 12),
+                              const SizedBox(width: 12),
 
+                              /// ITEM INFO
                               Expanded(
                                 child: Column(
                                   crossAxisAlignment:
-                                      CrossAxisAlignment
-                                          .start,
+                                      CrossAxisAlignment.start,
                                   children: [
 
                                     Text(
                                       menu['name'],
                                       style: const TextStyle(
-                                          fontWeight:
-                                              FontWeight
-                                                  .bold),
+                                          fontWeight: FontWeight.bold),
                                     ),
 
-                                    const SizedBox(
-                                        height: 6),
+                                    const SizedBox(height: 6),
 
                                     Text(
                                       "Price: ${menu['price']}\$",
-                                      style:
-                                          const TextStyle(
-                                        color:
-                                            Colors.red,
-                                        fontWeight:
-                                            FontWeight
-                                                .w600,
+                                      style: const TextStyle(
+                                        color: Colors.red,
+                                        fontWeight: FontWeight.w600,
                                       ),
                                     ),
 
-                                    const SizedBox(
-                                        height: 8),
+                                    const SizedBox(height: 8),
 
                                     Row(
-                                      mainAxisSize:
-                                          MainAxisSize
-                                              .min,
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
+
                                         IconButton(
-                                          icon: const Icon(
-                                              Icons
-                                                  .remove,
-                                              size:
-                                                  18),
-                                          onPressed: () =>
-                                              decreaseQty(
-                                                  index),
+                                          icon: const Icon(Icons.remove, size: 18),
+                                          onPressed: () => decreaseQty(index),
                                         ),
+
                                         Text(
-                                          qty
-                                              .toString(),
-                                          style:
-                                              const TextStyle(
-                                            fontWeight:
-                                                FontWeight
-                                                    .bold,
-                                          ),
+                                          qty.toString(),
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold),
                                         ),
+
                                         IconButton(
-                                          icon: const Icon(
-                                              Icons
-                                                  .add,
-                                              size:
-                                                  18),
-                                          onPressed: () =>
-                                              increaseQty(
-                                                  index),
+                                          icon: const Icon(Icons.add, size: 18),
+                                          onPressed: () => increaseQty(index),
                                         ),
                                       ],
                                     ),
@@ -354,56 +332,45 @@ class _CartScreenState extends State<CartScreen> {
                     ),
             ),
 
+            /// TOTAL CARD
             Container(
-              padding:
-                  const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
-                color: Colors.teal
-                    .withOpacity(0.15),
-                borderRadius:
-                    BorderRadius.circular(12),
+                color: Colors.teal.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
               ),
+
               child: Row(
-                mainAxisAlignment:
-                    MainAxisAlignment
-                        .spaceBetween,
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
+
                   Column(
-                    crossAxisAlignment:
-                        CrossAxisAlignment
-                            .start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+
                       const Text(
                         "Totals",
-                        style: TextStyle(
-                            fontWeight:
-                                FontWeight.bold),
+                        style: TextStyle(fontWeight: FontWeight.bold),
                       ),
+
                       Text(
                         "${total.toStringAsFixed(2)}\$",
-                        style:
-                            const TextStyle(
+                        style: const TextStyle(
                           color: Colors.red,
                           fontSize: 18,
-                          fontWeight:
-                              FontWeight.bold,
+                          fontWeight: FontWeight.bold,
                         ),
                       ),
                     ],
                   ),
+
                   ElevatedButton(
-                    style:
-                        ElevatedButton
-                            .styleFrom(
-                      backgroundColor:
-                          Colors.teal,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.teal,
                     ),
                     onPressed:
-                        filteredItems.isEmpty
-                            ? null
-                            : showPaymentOptions,
-                    child:
-                        const Text("Pay Now"),
+                        filteredItems.isEmpty ? null : showPaymentOptions,
+                    child: const Text("Pay Now"),
                   )
                 ],
               ),

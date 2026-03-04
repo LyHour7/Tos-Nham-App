@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../../core/services/profile_service.dart';
-
+import '../../../routes/app_routes.dart';
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
@@ -54,6 +54,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+
     if (isLoading) {
       return const Scaffold(
         body: Center(child: CircularProgressIndicator()),
@@ -66,6 +67,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         title: const Text("Profile"),
         backgroundColor: Colors.teal,
       ),
+
       body: RefreshIndicator(
         onRefresh: loadProfileData,
         child: ListView(
@@ -86,7 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
             const SizedBox(height: 12),
 
-            /// ONLINE ORDER HISTORY
+            /// ORDER HISTORY
             buildHistoryCard(
               title: "Online Order History",
               count: orders.length,
@@ -138,46 +140,118 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// PROFILE CARD
   Widget _buildUserCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.teal.withOpacity(0.2),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        children: [
-          const CircleAvatar(
-            radius: 30,
-            backgroundColor: Colors.teal,
-            child: Icon(Icons.person, color: Colors.white),
+    return Stack(
+      children: [
+
+        Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.teal.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(width: 15),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user?['name'] ?? 'Unknown User',
-                  style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold),
+          child: Row(
+            children: [
+
+              /// PROFILE IMAGE
+              _buildProfileAvatar(),
+
+              const SizedBox(width: 15),
+
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+
+                    Text(
+                      user?['name'] ?? 'Unknown User',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(user?['email'] ?? ''),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      user?['phone'] ?? '',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+
+                    const SizedBox(height: 3),
+
+                    Text(
+                      user?['role'] ?? 'Customer',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ],
                 ),
-                Text(user?['email'] ?? ''),
-                Text(
-                  user?['role'] ?? 'Customer',
-                  style: const TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey),
-                ),
-              ],
-            ),
-          )
-        ],
-      ),
+              )
+            ],
+          ),
+        ),
+
+        /// EDIT BUTTON
+        Positioned(
+          top: 5,
+          right: 5,
+          child: IconButton(
+            icon: const Icon(Icons.edit, color: Colors.teal),
+            onPressed: () async {
+              await Navigator.pushNamed(context, AppRoutes.editProfile);
+              loadProfileData();
+            },
+          ),
+        )
+      ],
     );
   }
 
+  /// PROFILE AVATAR + ACTIVE DOT
+  Widget _buildProfileAvatar() {
+    return Stack(
+      children: [
+
+        CircleAvatar(
+          radius: 30,
+          backgroundColor: Colors.teal,
+          backgroundImage: user?['profile_image'] != null
+              ? NetworkImage(user!['profile_image'])
+              : null,
+          child: user?['profile_image'] == null
+              ? const Icon(Icons.person, color: Colors.white)
+              : null,
+        ),
+
+        /// ACTIVE STATUS
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: Container(
+            width: 14,
+            height: 14,
+            decoration: BoxDecoration(
+              color: user?['is_active'] == true
+                  ? Colors.green
+                  : Colors.grey,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 2),
+            ),
+          ),
+        )
+      ],
+    );
+  }
+
+  /// HISTORY CARD
   Widget buildHistoryCard({
     required String title,
     required int count,
@@ -186,17 +260,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
+
       child: Container(
         padding: const EdgeInsets.all(16),
+
         decoration: BoxDecoration(
           border: Border.all(color: Colors.teal),
           borderRadius: BorderRadius.circular(12),
         ),
+
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
+
           children: [
-            Text(title,
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+
+            Text(
+              title,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+
             Row(
               children: [
                 Text(
@@ -215,11 +297,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// SHOW ORDERS
   void showOrders() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) {
+
         if (orders.isEmpty) {
           return const SizedBox(
             height: 300,
@@ -230,15 +314,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return DraggableScrollableSheet(
           expand: false,
           builder: (_, controller) {
+
             return ListView.builder(
               controller: controller,
               itemCount: orders.length,
               itemBuilder: (_, index) {
+
                 final order = orders[index];
 
                 return ListTile(
                   leading: const Icon(Icons.receipt_long),
+
                   title: Text("Order #${order['id']}"),
+
                   subtitle: Text(
                     "Total: \$${order['total_amount']}\n"
                     "Status: ${order['order_status']}\n"
@@ -253,11 +341,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  /// SHOW RESERVATIONS
   void showReservations() {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       builder: (_) {
+
         if (reservations.isEmpty) {
           return const SizedBox(
             height: 300,
@@ -268,15 +358,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
         return DraggableScrollableSheet(
           expand: false,
           builder: (_, controller) {
+
             return ListView.builder(
               controller: controller,
               itemCount: reservations.length,
+
               itemBuilder: (_, index) {
+
                 final reservation = reservations[index];
 
                 return ListTile(
                   leading: const Icon(Icons.event_available),
+
                   title: Text("Reservation #${reservation['id']}"),
+
                   subtitle: Text(
                     "${reservation['reservation_date']} "
                     "${reservation['reservation_time']}\n"
