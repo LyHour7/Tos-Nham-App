@@ -46,4 +46,19 @@ class ProfileService {
 
     return [];
   }
+
+  /* ===============================
+     GET BRANCH ORDERS (FOR STAFF)
+  =============================== */
+  static Future<List<dynamic>> getBranchOrders(int branchId) async {
+    final data = await ApiService.get("/orders/branch/$branchId");
+
+    if (data['success'] == true &&
+        data['data'] != null &&
+        data['data']['orders'] != null) {
+      return data['data']['orders'];
+    }
+
+    return [];
+  }
 }

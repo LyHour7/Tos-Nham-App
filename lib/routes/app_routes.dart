@@ -15,6 +15,7 @@ class AppRoutes {
   static const orderOnline = '/order-online';
   static const editProfile = '/edit-profile';
   // static const booking = '/booking';
+  
   // Staff
   static const staffDashboard = '/staff-dashboard';
   static const reservationQR = '/reservation-qr'; 

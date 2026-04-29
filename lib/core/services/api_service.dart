@@ -2,8 +2,10 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:io';
+import '../config/api_config.dart';
+
 class ApiService {
-  static const String baseUrl = "http://10.0.2.2:5000/api";
+  static String get baseUrl => ApiConfig.baseUrl;
 
   static Future<Map<String, String>> _getHeaders() async {
     final prefs = await SharedPreferences.getInstance();

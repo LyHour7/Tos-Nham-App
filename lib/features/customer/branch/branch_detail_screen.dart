@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:tos_nham_app/features/customer/menu/menu_detail_screen.dart';
+import '../../../core/config/api_config.dart';
 import '../../../core/services/api_service.dart';
-import '../../../core/services/home_service.dart';
 
 class BranchDetailScreen extends StatefulWidget {
   final int branchId;
@@ -23,6 +23,13 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
   int? selectedCategoryId;
   bool isLoading = true;
 
+  static const Color teal = Color(0xFF009688);
+  static const Color tealLight = Color(0xFFE0F2F1);
+  static const Color tealDark = Color(0xFF00695C);
+
+  final String logoUrl =
+      "https://rulggijojszaxotcqkjd.supabase.co/storage/v1/object/public/app-assets/logo.png";
+
   @override
   void initState() {
     super.initState();
@@ -31,21 +38,39 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
 
   Future<void> loadBranchMenu() async {
     try {
-      final data =
-          await ApiService.get("/menu/items?branch_id=${widget.branchId}");
+      final responses = await Future.wait([
+        ApiService.get("/menu/items?branch_id=${widget.branchId}"),
+        ApiService.get("/menu/categories?branch_id=${widget.branchId}"),
+      ]);
 
-      final items = data['data']['menuItems'];
+      final menuResponse = responses[0];
+      final categoryResponse = responses[1];
 
-      /// remove duplicate categories
-      final Map<int, dynamic> uniqueMap = {};
-      for (var item in items) {
-        final cat = item['category'];
-        uniqueMap[cat['id']] = cat;
+      final items = menuResponse['data']?['menuItems'] ?? [];
+
+      List endpointCategories = [];
+      final categoryData = categoryResponse['data'];
+      if (categoryData is List) {
+        endpointCategories = categoryData;
+      } else if (categoryData is Map && categoryData['categories'] is List) {
+        endpointCategories = categoryData['categories'];
+      }
+
+      // Fallback to categories from menu items if endpoint format differs.
+      if (endpointCategories.isEmpty) {
+        final Map<int, dynamic> uniqueMap = {};
+        for (var item in items) {
+          final cat = item['category'];
+          if (cat != null && cat['id'] != null) {
+            uniqueMap[cat['id']] = cat;
+          }
+        }
+        endpointCategories = uniqueMap.values.toList();
       }
 
       setState(() {
         menuItems = items;
-        categories = uniqueMap.values.toList();
+        categories = endpointCategories;
         isLoading = false;
       });
     } catch (e) {
@@ -54,20 +79,15 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
     }
   }
 
-  /// FIX IMAGE URL
   String buildImageUrl(String? image) {
     if (image == null || image.isEmpty) return "";
-
-    if (image.startsWith("http")) {
-      return image; // Supabase image
-    }
-
-    return "http://10.0.2.2:5000$image"; // local image
+    if (image.startsWith("http")) return image;
+    final baseUrl = "${ApiConfig.baseUrl.replaceAll('/api', '')}";
+    return "$baseUrl$image";
   }
 
   List get filteredItems {
     if (selectedCategoryId == null) return menuItems;
-
     return menuItems
         .where((item) => item['category']['id'] == selectedCategoryId)
         .toList();
@@ -77,55 +97,137 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
   Widget build(BuildContext context) {
     if (isLoading) {
       return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
+        body: Center(
+          child: CircularProgressIndicator(color: teal),
+        ),
       );
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.branchName),
-        backgroundColor: Colors.teal,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
+      backgroundColor: const Color(0xFFF5F5F5),
+      body: Column(
+        children: [
+          /// ============================
+          /// HEADER
+          /// ============================
+          Container(
+            color: Colors.transparent,
+            margin: const EdgeInsets.only(top: 48),
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.centerLeft,
+              children: [
+                // Teal bar
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(left: 36),
+                  padding: const EdgeInsets.only(
+                    left: 52, right: 16, top: 14, bottom: 14,
+                  ),
+                  decoration: const BoxDecoration(color: Color(0xFF008F99)),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Navigator.pop(context),
+                        child: const Icon(Icons.arrow_back_ios,
+                            color: Colors.white, size: 18),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.branchName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
-            /// CATEGORY FILTER
-            SizedBox(
-              height: 45,
+                // Logo overlapping
+                Positioned(
+                  left: 0,
+                  child: Container(
+                    width: 72,
+                    height: 72,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Colors.white,
+                      border: Border.all(color: Color(0xFF008F99), width: 2.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: ClipOval(
+                      child: Image.network(
+                        logoUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.store,
+                          color: teal,
+                          size: 32,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          /// ============================
+          /// CATEGORY FILTER
+          /// ============================
+          Container(
+            color: Colors.white,
+            margin: const EdgeInsets.only(top: 15, bottom: 5),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 12),
+            child: SizedBox(
+              height: 38,
               child: ListView.builder(
                 scrollDirection: Axis.horizontal,
-                itemCount: categories.length,
+                itemCount: categories.length + 1, // +1 for "All"
                 itemBuilder: (context, index) {
-                  final category = categories[index];
-                  final isSelected =
-                      selectedCategoryId == category['id'];
+                  final isAll = index == 0;
+                  final category = isAll ? null : categories[index - 1];
+                  final isSelected = isAll
+                      ? selectedCategoryId == null
+                      : selectedCategoryId == category['id'];
 
                   return GestureDetector(
                     onTap: () {
                       setState(() {
-                        selectedCategoryId = category['id'];
+                        selectedCategoryId = isAll ? null : category['id'];
                       });
                     },
                     child: Container(
-                      margin: const EdgeInsets.only(right: 10),
+                      margin: const EdgeInsets.only(right: 8),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 15, vertical: 8),
+                          horizontal: 16, vertical: 6),
                       decoration: BoxDecoration(
-                        color: isSelected
-                            ? Colors.teal
-                            : Colors.grey.shade200,
+                        color: isSelected ? Color(0xFF008F99) : tealLight,
                         borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSelected
+                              ? Color(0xFF008F99)
+                              : Color(0xFF008F99).withOpacity(0.3),
+                        ),
                       ),
-                      child: Center(
-                        child: Text(
-                          category['name'],
-                          style: TextStyle(
-                            color: isSelected
-                                ? Colors.white
-                                : Colors.black,
-                          ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        isAll ? "All" : category['name'],
+                        style: TextStyle(
+                          color: isSelected ? Colors.white : tealDark,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
                         ),
                       ),
                     ),
@@ -133,90 +235,92 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                 },
               ),
             ),
+          ),
 
-            const SizedBox(height: 20),
+          /// ============================
+          /// MENU LIST
+          /// ============================
+          Expanded(
+            child: filteredItems.isEmpty
+                ? Center(
+                    child: Text(
+                      "No items found",
+                      style: TextStyle(
+                        color: Colors.grey.shade500,
+                        fontSize: 15,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 20),
+                    itemCount: filteredItems.length,
+                    itemBuilder: (context, index) {
+                      final item = filteredItems[index];
+                      final bool isAvailable =
+                          item['status'].toString().toLowerCase() ==
+                              "available";
+                      final imageUrl = buildImageUrl(item['image']);
 
-            /// MENU LIST
-            Expanded(
-              child: filteredItems.isEmpty
-                  ? const Center(child: Text("No items found"))
-                  : ListView.builder(
-                      itemCount: filteredItems.length,
-                      itemBuilder: (context, index) {
-
-                        final item = filteredItems[index];
-                        final bool isAvailable =
-                            item['status'].toString().toLowerCase() ==
-                                "available";
-
-                        final imageUrl = buildImageUrl(item['image']);
-
-                        return Container(
-                          margin: const EdgeInsets.only(bottom: 15),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(15),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.05),
-                                blurRadius: 6,
-                                offset: const Offset(0, 3),
-                              ),
-                            ],
+                      return Container(
+                        margin: const EdgeInsets.only(bottom: 14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: teal.withOpacity(0.2),
                           ),
-
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.05),
+                              blurRadius: 8,
+                              offset: const Offset(0, 3),
+                            ),
+                          ],
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(10),
                           child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-
                               /// IMAGE
                               ClipRRect(
-                                borderRadius:
-                                    BorderRadius.circular(10),
+                                borderRadius: BorderRadius.circular(10),
                                 child: imageUrl.isNotEmpty
                                     ? Image.network(
                                         imageUrl,
-                                        width: 80,
-                                        height: 80,
+                                        width: 95,
+                                        height: 95,
                                         fit: BoxFit.cover,
                                         errorBuilder:
                                             (context, error, stackTrace) {
-                                          return Container(
-                                            width: 80,
-                                            height: 80,
-                                            color: Colors.grey,
-                                            child: const Icon(
-                                              Icons.fastfood,
-                                              color: Colors.white,
-                                            ),
-                                          );
+                                          return _imageFallback();
                                         },
                                       )
-                                    : Container(
-                                        width: 80,
-                                        height: 80,
-                                        color: Colors.grey,
-                                        child: const Icon(
-                                          Icons.fastfood,
-                                          color: Colors.white,
-                                        ),
-                                      ),
+                                    : _imageFallback(),
                               ),
 
-                              const SizedBox(width: 15),
+                              const SizedBox(width: 12),
 
                               /// DETAILS
                               Expanded(
                                 child: Column(
-                                  crossAxisAlignment:
-                                      CrossAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      item['name'],
-                                      style: const TextStyle(
-                                        fontWeight:
-                                            FontWeight.bold,
-                                        fontSize: 16,
+                                    // Name pill
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: tealLight,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Text(
+                                        item['name'],
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                          color: tealDark,
+                                        ),
                                       ),
                                     ),
 
@@ -226,106 +330,173 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                                       "Price: \$${item['price']}",
                                       style: const TextStyle(
                                         color: Colors.red,
-                                        fontWeight:
-                                            FontWeight.w600,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 13,
                                       ),
                                     ),
 
                                     const SizedBox(height: 4),
 
-                                    Text(
-                                      "Status: ${item['status']}",
-                                      style: TextStyle(
+                                    // Status badge
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
                                         color: isAvailable
-                                            ? Colors.green
-                                            : Colors.red,
+                                            ? Colors.green.withOpacity(0.1)
+                                            : Colors.red.withOpacity(0.1),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(
+                                          color: isAvailable
+                                              ? Colors.green.withOpacity(0.4)
+                                              : Colors.red.withOpacity(0.4),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        item['status'],
+                                        style: TextStyle(
+                                          color: isAvailable
+                                              ? Colors.green
+                                              : Colors.red,
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 11,
+                                        ),
                                       ),
                                     ),
                                   ],
                                 ),
                               ),
 
+                              const SizedBox(width: 8),
+
                               /// ACTIONS
                               Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
                                 children: [
-
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.add_shopping_cart,
-                                      color: Colors.teal,
-                                    ),
-                                    onPressed: isAvailable
+                                  // Cart icon
+                                  GestureDetector(
+                                    onTap: isAvailable
                                         ? () async {
                                             try {
-                                              await HomeService
-                                                  .addToCart(
-                                                      item['id']);
+                                              await ApiService.post(
+                                                "/cart",
+                                                {
+                                                  "menu_item_id": item['id'],
+                                                  "quantity": 1,
+                                                },
+                                              );
 
-                                              if (!mounted)
-                                                return;
+                                              if (!mounted) return;
 
-                                              ScaffoldMessenger.of(
-                                                      context)
+                                              ScaffoldMessenger.of(context)
                                                   .showSnackBar(
-                                                const SnackBar(
-                                                  content: Text(
+                                                SnackBar(
+                                                  content: const Text(
                                                       "Added to cart"),
-                                                  backgroundColor:
-                                                      Colors.green,
+                                                  backgroundColor: Colors.green,
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                  ),
                                                 ),
                                               );
                                             } catch (e) {
-                                              ScaffoldMessenger.of(
-                                                      context)
+                                              ScaffoldMessenger.of(context)
                                                   .showSnackBar(
                                                 SnackBar(
-                                                  content:
-                                                      Text("Error: $e"),
-                                                  backgroundColor:
-                                                      Colors.red,
+                                                  content: Text("Error: $e"),
+                                                  backgroundColor: Colors.red,
+                                                  behavior:
+                                                      SnackBarBehavior.floating,
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius:
+                                                        BorderRadius.circular(
+                                                            10),
+                                                  ),
                                                 ),
                                               );
                                             }
                                           }
                                         : null,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: isAvailable
+                                            ? tealLight
+                                            : Colors.grey.shade100,
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        Icons.shopping_cart_outlined,
+                                        color: isAvailable
+                                            ? teal
+                                            : Colors.grey.shade400,
+                                        size: 20,
+                                      ),
+                                    ),
                                   ),
 
-                                  const SizedBox(height: 5),
+                                  const SizedBox(height: 28),
 
-                                  ElevatedButton(
-                                    style:
-                                        ElevatedButton.styleFrom(
-                                      backgroundColor:
-                                          Colors.teal,
-                                      padding:
-                                          const EdgeInsets.symmetric(
-                                              horizontal: 15,
-                                              vertical: 6),
-                                    ),
-                                    onPressed: () {
-                                      Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) =>
-                                              MenuDetailScreen(
-                                                  item: item),
+                                  // View button
+                                  SizedBox(
+                                    width: 72,
+                                    height: 32,
+                                    child: ElevatedButton(
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: Color(0xFF008F99),
+                                        foregroundColor: Colors.white,
+                                        elevation: 0,
+                                        padding: EdgeInsets.zero,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
                                         ),
-                                      );
-                                    },
-                                    child:
-                                        const Text("View Detail"),
+                                      ),
+                                      onPressed: () {
+                                        Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                            builder: (_) =>
+                                                MenuDetailScreen(item: item),
+                                          ),
+                                        );
+                                      },
+                                      child: const Text(
+                                        "View",
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 13,
+                                        ),
+                                      ),
+                                    ),
                                   ),
                                 ],
                               ),
                             ],
                           ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
       ),
+    );
+  }
+
+  Widget _imageFallback() {
+    return Container(
+      width: 95,
+      height: 95,
+      decoration: BoxDecoration(
+        color: tealLight,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Icon(Icons.fastfood, color: teal, size: 36),
     );
   }
 }
