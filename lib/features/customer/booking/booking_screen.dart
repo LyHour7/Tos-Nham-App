@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/utils/auth_guard.dart';
+import '../branch/branch_detail_screen.dart';
 import '../reservation/reservation_qr_payment_screen.dart';
 
 class BookingFormScreen extends StatefulWidget {
@@ -19,14 +21,56 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   List cartItems = [];
   List tables = [];
   List branches = [];
+  final Set<int> selectedMenuItemIds = {};
 
-  double itemsTotal = 0;
+  double get selectedItemsTotal {
+    return selectedCartItems.fold(0.0, (sum, item) {
+      final price =
+          double.tryParse(item['menuItem']['price'].toString()) ?? 0.0;
+      return sum + (price * item['quantity']);
+    });
+  }
 
-  double get effectiveItemsTotal => cartItems.isEmpty ? 2.5 : itemsTotal;
+  /// Effective items to send to the reservation API.
+  /// Use explicitly selected items when present, otherwise fall back
+  /// to all cart items for the selected branch so the deposit calculation
+  /// doesn't collapse to the booking-only minimum after navigation.
+  List get effectiveSelectedItems {
+    final sel = selectedCartItems;
+    if (sel.isNotEmpty) return sel;
+    // If the user explicitly toggled selection (deselected all items),
+    // treat as booking-only (no items) so deposit becomes the flat fee.
+    if (selectionTouched) return [];
+    return selectedBranchCartItems;
+  }
 
-  int? branchId;
+  double get effectiveItemsTotal {
+    return effectiveSelectedItems.fold(0.0, (sum, item) {
+      final price =
+          double.tryParse(item['menuItem']['price'].toString()) ?? 0.0;
+      return sum + (price * item['quantity']);
+    });
+  }
+
+  double get reservationChargeAmount {
+    if (effectiveSelectedItems.isEmpty) {
+      return 2.5;
+    }
+
+    return effectiveItemsTotal * 0.5;
+  }
+
+  String get reservationChargeLabel {
+    if (effectiveSelectedItems.isEmpty) {
+      return 'Booking fee';
+    }
+
+    return 'Food deposit (50%)';
+  }
+
   int? selectedBranchId;
   int? selectedTableId;
+  bool selectionTouched = false;
 
   bool isLoading = true;
   bool isSubmitting = false;
@@ -49,10 +93,6 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
     "19:00",
     "20:00",
   ];
-
-  // Seat capacity filter options
-  final List<int> seatOptions = [2, 4, 6, 8, 10];
-  int? selectedSeatFilter;
 
   @override
   void initState() {
@@ -95,26 +135,12 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       final data = await ApiService.get("/cart");
       final items = data['data']['cartItems'] ?? [];
 
-      double total = 0;
-      int? extractedBranch;
-
-      for (var item in items) {
-        final price =
-            double.tryParse(item['menuItem']['price'].toString()) ?? 0.0;
-        total += price * item['quantity'];
-        extractedBranch = item['menuItem']['branch']['id'];
-      }
-
       setState(() {
         cartItems = items;
-        itemsTotal = total;
-        branchId = extractedBranch;
+        selectedMenuItemIds
+          ..clear()
+          ..addAll(items.map(_menuItemId).whereType<int>());
       });
-
-      if (extractedBranch != null) {
-        selectedBranchId = extractedBranch;
-        await fetchTables(extractedBranch);
-      }
     } catch (e) {
       debugPrint("Cart error: $e");
     }
@@ -123,8 +149,22 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
   Future<void> fetchTables(int branchId) async {
     try {
       final response = await ApiService.get("/tables?branch_id=$branchId");
+      final rawTables = response['data'];
+      final normalizedTables = rawTables is Map
+          ? (rawTables['tables'] ?? rawTables['data'] ?? [])
+          : rawTables;
+
       setState(() {
-        tables = response['data'];
+        tables = (normalizedTables as List? ?? [])
+            .whereType<Map>()
+            .map((table) => Map<String, dynamic>.from(table))
+            .toList()
+          ..sort((left, right) {
+            final leftLabel = _tableDisplayLabel(left);
+            final rightLabel = _tableDisplayLabel(right);
+            return leftLabel.compareTo(rightLabel);
+          });
+        _syncSelectedTableWithAvailableTables(preferFirst: true);
       });
     } catch (e) {
       debugPrint("Tables error: $e");
@@ -133,11 +173,259 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
 
   List get availableTables {
     return tables.where((table) {
-      return table['seat_capacity'] >= guestCount;
+      final seatCapacity = _tableSeatCapacity(table);
+      final matchesGuestCount = seatCapacity >= guestCount;
+      return matchesGuestCount;
     }).toList();
   }
 
+  List get selectableTables {
+    return availableTables
+        .where((table) => _tableStatus(table) == 'available')
+        .toList();
+  }
+
+  List get selectedBranchCartItems {
+    if (selectedBranchId == null) return [];
+
+    return cartItems
+        .where((item) => _itemBranchId(item) == selectedBranchId)
+        .toList();
+  }
+
+  int _tableSeatCapacity(dynamic table) {
+    final seatCapacity = table['seat_capacity'];
+    if (seatCapacity is int) return seatCapacity;
+    return int.tryParse(seatCapacity?.toString() ?? '') ?? 0;
+  }
+
+  int? _itemBranchId(dynamic item) {
+    final branch = item['menuItem']?['branch'];
+    final branchId = branch?['id'];
+    if (branchId is int) return branchId;
+    return int.tryParse(branchId?.toString() ?? '');
+  }
+
+  String _selectedBranchName() {
+    if (selectedBranchId == null) return 'this branch';
+
+    for (final branch in branches) {
+      if (branch['id'] == selectedBranchId) {
+        return branch['branch_name']?.toString() ?? 'this branch';
+      }
+    }
+
+    return 'this branch';
+  }
+
+  Future<void> _openBranchMenu() async {
+    if (selectedBranchId == null) return;
+
+    final allowed = await ensureLoggedIn(context);
+    if (!allowed) return;
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => BranchDetailScreen(
+          branchId: selectedBranchId!,
+          branchName: _selectedBranchName(),
+        ),
+      ),
+    );
+
+    if (!mounted) return;
+
+    await fetchCart();
+    setState(() {
+      selectionTouched = false;
+    });
+  }
+
+  String _tableStatus(dynamic table) {
+    final status = table['status']?.toString().trim().toLowerCase();
+    if (status == null || status.isEmpty) {
+      return 'available';
+    }
+    return status;
+  }
+
+  String _tableDisplayLabel(dynamic table) {
+    final candidates = [
+      table['table_number'],
+      table['table_no'],
+      table['name'],
+      table['code'],
+    ];
+
+    for (final candidate in candidates) {
+      final text = candidate?.toString().trim();
+      if (text != null && text.isNotEmpty) {
+        return text;
+      }
+    }
+
+    final tableId = _tableId(table);
+    return tableId != null ? 'T$tableId' : 'Table';
+  }
+
+  String _tableStatusLabel(dynamic table) {
+    switch (_tableStatus(table)) {
+      case 'available':
+        return 'Available';
+      case 'reserved':
+        return 'Reserved';
+      case 'occupied':
+        return 'Occupied';
+      case 'maintenance':
+      case 'unavailable':
+        return 'Unavailable';
+      default:
+        return 'Unknown';
+    }
+  }
+
+  Color _tableStatusColor(dynamic table) {
+    switch (_tableStatus(table)) {
+      case 'available':
+        return const Color(0xFF2EAD65);
+      case 'reserved':
+        return const Color(0xFFF0A500);
+      case 'occupied':
+        return const Color(0xFFE85D5D);
+      case 'maintenance':
+      case 'unavailable':
+        return const Color(0xFF7A869A);
+      default:
+        return const Color(0xFF4D6B6B);
+    }
+  }
+
+  Map<String, int> get tableStatusCounts {
+    final counts = <String, int>{
+      'available': 0,
+      'reserved': 0,
+      'occupied': 0,
+      'unavailable': 0,
+    };
+
+    for (final table in availableTables) {
+      final status = _tableStatus(table);
+      if (counts.containsKey(status)) {
+        counts[status] = counts[status]! + 1;
+      } else {
+        counts['unavailable'] = counts['unavailable']! + 1;
+      }
+    }
+
+    return counts;
+  }
+
+  int? _tableId(dynamic table) {
+    final tableId = table['id'];
+    if (tableId is int) return tableId;
+    return int.tryParse(tableId?.toString() ?? '');
+  }
+
+  void _syncSelectedTableWithAvailableTables({bool preferFirst = false}) {
+    final tableIds = selectableTables.map(_tableId).whereType<int>().toList();
+
+    if (tableIds.isEmpty) {
+      selectedTableId = null;
+      return;
+    }
+
+    if (preferFirst ||
+        selectedTableId == null ||
+        !tableIds.contains(selectedTableId)) {
+      selectedTableId = tableIds.first;
+    }
+  }
+
+  String _selectedTableLabel() {
+    if (selectedTableId == null) return '--';
+
+    for (final table in selectableTables) {
+      if (_tableId(table) == selectedTableId) {
+        return _tableDisplayLabel(table);
+      }
+    }
+
+    for (final table in availableTables) {
+      if (_tableId(table) == selectedTableId) {
+        return _tableDisplayLabel(table);
+      }
+    }
+
+    return '--';
+  }
+
+  Widget _buildStatusChip(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.25)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$label: $count',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List get selectedCartItems {
+    return selectedBranchCartItems.where(_isCartItemSelected).toList();
+  }
+
+  int? _menuItemId(dynamic item) {
+    final menuItemId = item['menuItem']?['id'];
+    if (menuItemId is int) return menuItemId;
+    return int.tryParse(menuItemId?.toString() ?? '');
+  }
+
+  bool _isCartItemSelected(dynamic item) {
+    final menuItemId = _menuItemId(item);
+    return menuItemId != null && selectedMenuItemIds.contains(menuItemId);
+  }
+
+  void _toggleCartItemSelection(dynamic item) {
+    final menuItemId = _menuItemId(item);
+    if (menuItemId == null) return;
+
+    setState(() {
+      if (selectedMenuItemIds.contains(menuItemId)) {
+        selectedMenuItemIds.remove(menuItemId);
+      } else {
+        selectedMenuItemIds.add(menuItemId);
+      }
+      selectionTouched = true;
+    });
+  }
+
   Future<void> submitReservation() async {
+    final allowed = await ensureLoggedIn(context);
+    if (!allowed) return;
+
     if (selectedBranchId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select a branch")),
@@ -154,6 +442,9 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
 
     setState(() => isSubmitting = true);
 
+    final hasFoodItems = effectiveSelectedItems.isNotEmpty;
+    final itemsTotal = hasFoodItems ? effectiveItemsTotal : 0.0;
+
     final payload = {
       "branch_id": selectedBranchId,
       "table_id": selectedTableId,
@@ -161,11 +452,12 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
       "reservation_time": selectedTime.substring(0, 5),
       "number_of_people": guestCount,
       "special_requests": remarksController.text,
-      "booking_type": cartItems.isEmpty ? "TABLE_ONLY" : "WITH_FOOD",
+      "booking_type": hasFoodItems ? "WITH_FOOD" : "TABLE_ONLY",
+      "items_total": itemsTotal,
     };
 
-    if (cartItems.isNotEmpty) {
-      payload["items"] = cartItems.map((item) {
+    if (hasFoodItems) {
+      payload["items"] = effectiveSelectedItems.map((item) {
         return {
           "menu_id": item['menuItem']['id'],
           "quantity": item['quantity']
@@ -315,7 +607,8 @@ class _BookingFormScreenState extends State<BookingFormScreen> {
               ],
             ),
           ),
-const SizedBox(height: 10),
+          const SizedBox(height: 10),
+
           /// ============================
           /// SCROLLABLE BODY
           /// ============================
@@ -413,6 +706,34 @@ const SizedBox(height: 10),
                     ),
                   ),
 
+                  const SizedBox(height: 12),
+
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: ElevatedButton.icon(
+                      onPressed:
+                          selectedBranchId == null ? null : _openBranchMenu,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF009688),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon:
+                          const Icon(Icons.restaurant_menu_outlined, size: 18),
+                      label: const Text(
+                        "Choose items from this branch",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+
                   const SizedBox(height: 20),
 
                   /// NUMBER OF GUESTS
@@ -424,7 +745,9 @@ const SizedBox(height: 10),
                         onTap: guestCount > 1
                             ? () => setState(() {
                                   guestCount--;
-                                  selectedTableId = null;
+                                  _syncSelectedTableWithAvailableTables(
+                                    preferFirst: true,
+                                  );
                                 })
                             : null,
                         child: Container(
@@ -467,7 +790,9 @@ const SizedBox(height: 10),
                       GestureDetector(
                         onTap: () => setState(() {
                           guestCount++;
-                          selectedTableId = null;
+                          _syncSelectedTableWithAvailableTables(
+                            preferFirst: true,
+                          );
                         }),
                         child: Container(
                           width: 36,
@@ -545,128 +870,175 @@ const SizedBox(height: 10),
                   _sectionLabel(
                       Icons.table_restaurant_outlined, "Choose Table"),
 
-                  // Seat filter chips
+                  Text(
+                    "Tables are loaded from the selected branch. Tap an available table to book it.",
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      height: 1.4,
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
                   Wrap(
                     spacing: 8,
-                    children: seatOptions.map((seats) {
-                      final isSelected = selectedSeatFilter == seats;
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            selectedSeatFilter = isSelected ? null : seats;
-                            selectedTableId = null;
-                          });
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? const Color(0xFF009688)
-                                : Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: const Color(0xFF009688).withOpacity(0.5),
-                            ),
-                          ),
-                          child: Text(
-                            "$seats Seats",
-                            style: TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: isSelected
-                                  ? Colors.white
-                                  : const Color(0xFF009688),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
+                    runSpacing: 8,
+                    children: [
+                      _buildStatusChip(
+                        'Available',
+                        tableStatusCounts['available'] ?? 0,
+                        const Color(0xFF2EAD65),
+                      ),
+                      _buildStatusChip(
+                        'Reserved',
+                        tableStatusCounts['reserved'] ?? 0,
+                        const Color(0xFFF0A500),
+                      ),
+                      _buildStatusChip(
+                        'Occupied',
+                        tableStatusCounts['occupied'] ?? 0,
+                        const Color(0xFFE85D5D),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 12),
 
-                  // Table qty selector (after filter)
                   if (availableTables.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       child: Text(
-                        "No tables available for the selected branch.",
+                        "No tables match the current branch, guest count, or seat filter.",
                         style: TextStyle(
                             color: Colors.grey.shade600, fontSize: 13),
                       ),
                     )
                   else
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: selectedTableId != null
-                              ? () => setState(() => selectedTableId = null)
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: availableTables.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount:
+                            MediaQuery.sizeOf(context).width >= 700 ? 3 : 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 1.25,
+                      ),
+                      itemBuilder: (context, index) {
+                        final table = availableTables[index];
+                        final tableId = _tableId(table);
+                        final status = _tableStatus(table);
+                        final isSelected = selectedTableId == tableId;
+                        final isSelectable = status == 'available';
+                        final statusColor = _tableStatusColor(table);
+
+                        return GestureDetector(
+                          onTap: isSelectable && tableId != null
+                              ? () => setState(() => selectedTableId = tableId)
                               : null,
-                          child: Container(
-                            width: 34,
-                            height: 34,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            padding: const EdgeInsets.all(12),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF009688),
-                              borderRadius: BorderRadius.circular(8),
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isSelected
+                                    ? const Color(0xFF009688)
+                                    : statusColor.withOpacity(0.25),
+                                width: isSelected ? 1.8 : 1.0,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withOpacity(0.04),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                            child: const Icon(Icons.remove,
-                                color: Colors.white, size: 18),
-                          ),
-                        ),
-                        Container(
-                          width: 50,
-                          height: 34,
-                          alignment: Alignment.center,
-                          margin: const EdgeInsets.symmetric(horizontal: 8),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                                color:
-                                    const Color(0xFF009688).withOpacity(0.4)),
-                          ),
-                          child: Text(
-                            selectedTableId != null
-                                ? availableTables
-                                    .indexWhere(
-                                        (t) => t['id'] == selectedTableId)
-                                    .toString()
-                                    .padLeft(2, '0')
-                                : "01",
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              color: Color(0xFF009688),
-                              fontSize: 15,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text(
+                                      _tableDisplayLabel(table),
+                                      style: TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                        color: isSelectable
+                                            ? const Color(0xFF1F2A2A)
+                                            : Colors.grey.shade500,
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      const Icon(
+                                        Icons.check_circle,
+                                        color: Color(0xFF009688),
+                                        size: 20,
+                                      ),
+                                  ],
+                                ),
+                                Text(
+                                  '${_tableSeatCapacity(table)} seats',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.10),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                      color: statusColor.withOpacity(0.25),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    _tableStatusLabel(table),
+                                    style: TextStyle(
+                                      color: statusColor,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+                                if (!isSelectable)
+                                  Text(
+                                    'Not selectable',
+                                    style: TextStyle(
+                                      color: Colors.grey.shade500,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
-                        ),
-                        GestureDetector(
-                          onTap: () {
-                            if (availableTables.isNotEmpty) {
-                              final nextIndex = selectedTableId == null
-                                  ? 0
-                                  : (availableTables.indexWhere((t) =>
-                                              t['id'] == selectedTableId) +
-                                          1) %
-                                      availableTables.length;
-                              setState(() => selectedTableId =
-                                  availableTables[nextIndex]['id']);
-                            }
-                          },
-                          child: Container(
-                            width: 34,
-                            height: 34,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF009688),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Icon(Icons.add,
-                                color: Colors.white, size: 18),
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
+
+                  const SizedBox(height: 10),
+
+                  Text(
+                    selectedTableId == null
+                        ? 'No table selected yet'
+                        : 'Selected table: ${_selectedTableLabel()}',
+                    style: TextStyle(
+                      color: Colors.grey.shade700,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
 
                   const SizedBox(height: 20),
 
@@ -755,13 +1127,25 @@ const SizedBox(height: 10),
                               ],
                             ),
                           )
+                        else if (selectedBranchCartItems.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Text(
+                              "No items from this branch selected. Tap the button above to choose items for ${_selectedBranchName()}.",
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 12,
+                              ),
+                            ),
+                          )
                         else
-                          ...cartItems.map((item) {
+                          ...selectedBranchCartItems.map((item) {
                             final menu = item['menuItem'];
                             final qty = item['quantity'];
                             final price =
                                 double.tryParse(menu['price'].toString()) ??
                                     0.0;
+                            final isSelected = _isCartItemSelected(item);
 
                             return Container(
                               padding: const EdgeInsets.symmetric(
@@ -773,6 +1157,35 @@ const SizedBox(height: 10),
                               ),
                               child: Row(
                                 children: [
+                                  GestureDetector(
+                                    onTap: () => _toggleCartItemSelection(item),
+                                    child: Container(
+                                      width: 28,
+                                      height: 28,
+                                      margin: const EdgeInsets.only(right: 10),
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        color: isSelected
+                                            ? const Color(0xFF009688)
+                                            : Colors.white,
+                                        border: Border.all(
+                                          color: isSelected
+                                              ? const Color(0xFF009688)
+                                              : const Color(0xFFB8DAD6),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        isSelected
+                                            ? Icons.check
+                                            : Icons.check_outlined,
+                                        color: isSelected
+                                            ? Colors.white
+                                            : const Color(0xFF80B9B3),
+                                        size: 17,
+                                      ),
+                                    ),
+                                  ),
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -790,7 +1203,6 @@ const SizedBox(height: 10),
                                               onTap: qty > 1
                                                   ? () => setState(() {
                                                         item['quantity']--;
-                                                        itemsTotal -= price;
                                                       })
                                                   : null,
                                               child: Container(
@@ -831,7 +1243,6 @@ const SizedBox(height: 10),
                                             GestureDetector(
                                               onTap: () => setState(() {
                                                 item['quantity']++;
-                                                itemsTotal += price;
                                               }),
                                               child: Container(
                                                 width: 24,
@@ -854,8 +1265,10 @@ const SizedBox(height: 10),
                                   ),
                                   Text(
                                     "\$${(price * qty).toStringAsFixed(2)}",
-                                    style: const TextStyle(
-                                      color: Colors.red,
+                                    style: TextStyle(
+                                      color: isSelected
+                                          ? Colors.red
+                                          : Colors.grey.shade400,
                                       fontWeight: FontWeight.bold,
                                       fontSize: 14,
                                     ),
@@ -863,7 +1276,7 @@ const SizedBox(height: 10),
                                 ],
                               ),
                             );
-                          }).toList(),
+                          }),
                       ],
                     ),
                   ),
@@ -875,7 +1288,7 @@ const SizedBox(height: 10),
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Text(
-                        "Total: ",
+                        "$reservationChargeLabel: ",
                         style: const TextStyle(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
@@ -883,7 +1296,7 @@ const SizedBox(height: 10),
                         ),
                       ),
                       Text(
-                        "\$${effectiveItemsTotal.toStringAsFixed(2)}",
+                        "\$${reservationChargeAmount.toStringAsFixed(2)}",
                         style: const TextStyle(
                           color: Colors.red,
                           fontWeight: FontWeight.bold,
@@ -914,7 +1327,9 @@ const SizedBox(height: 10),
                                   ),
                                 )
                               : Text(
-                                  cartItems.isEmpty ? "Reserve" : "Payment",
+                                  effectiveSelectedItems.isEmpty
+                                      ? "Reserve"
+                                      : "Payment",
                                   style: const TextStyle(
                                     fontWeight: FontWeight.bold,
                                     fontSize: 15,

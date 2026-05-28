@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tos Nham App Presentation</title>
+  <style>
+    :root {
+      --teal: #009688;
+      --deep: #103c3a;
+      --mint: #dff4ef;
+      --ink: #182322;
+      --muted: #60706d;
+      --line: #cfe5df;
+      --amber: #ffb300;
+      --coral: #ff5c47;
+      --paper: #fbfdfc;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(120deg, rgba(0, 150, 136, 0.12), transparent 34%),
+        linear-gradient(300deg, rgba(255, 179, 0, 0.15), transparent 28%),
+        var(--paper);
+      overflow: hidden;
+    }
+
+    .deck {
+      width: 100vw;
+      height: 100vh;
+      position: relative;
+    }
+
+    .slide {
+      width: 100%;
+      height: 100%;
+      display: none;
+      padding: 56px 72px;
+      position: absolute;
+      inset: 0;
+    }
+
+    .slide.active {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 28px;
+    }
+
+    .kicker {
+      color: var(--teal);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      font-size: 14px;
+    }
+
+    h1,
+    h2 {
+      margin: 0;
+      color: var(--deep);
+      letter-spacing: 0;
+    }
+
+    h1 {
+      font-size: clamp(46px, 7vw, 86px);
+      line-height: 0.95;
+      max-width: 920px;
+    }
+
+    h2 {
+      font-size: clamp(34px, 4.7vw, 60px);
+      line-height: 1.05;
+      max-width: 920px;
+    }
+
+    p {
+      font-size: 23px;
+      line-height: 1.45;
+      color: var(--muted);
+      margin: 0;
+      max-width: 850px;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 15px;
+    }
+
+    li {
+      font-size: 24px;
+      line-height: 1.25;
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+
+    li::before {
+      content: "";
+      width: 12px;
+      height: 12px;
+      margin-top: 9px;
+      border-radius: 50%;
+      background: var(--teal);
+      box-shadow: 12px 0 0 var(--amber);
+    }
+
+    .hero {
+      align-self: center;
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.78);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: 0 16px 38px rgba(16, 60, 58, 0.08);
+    }
+
+    .visual {
+      min-height: 390px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background:
+        linear-gradient(160deg, rgba(0, 150, 136, 0.16), rgba(255, 255, 255, 0.92)),
+        repeating-linear-gradient(90deg, transparent 0 22px, rgba(0, 150, 136, 0.07) 22px 23px);
+      display: grid;
+      place-items: center;
+      padding: 34px;
+      overflow: hidden;
+    }
+
+    .phone {
+      width: 230px;
+      height: 430px;
+      border: 10px solid var(--deep);
+      border-radius: 34px;
+      background: white;
+      box-shadow: 24px 24px 0 rgba(255, 179, 0, 0.25);
+      padding: 18px;
+      display: grid;
+      grid-template-rows: 60px 120px 1fr 46px;
+      gap: 14px;
+    }
+
+    .phone-bar {
+      background: var(--teal);
+      border-radius: 8px;
+    }
+
+    .phone-img {
+      background: linear-gradient(135deg, #f7d4b5, #fff3df);
+      border-radius: 8px;
+      position: relative;
+    }
+
+    .phone-img::after {
+      content: "";
+      position: absolute;
+      width: 58px;
+      height: 96px;
+      left: 84px;
+      top: 14px;
+      border-radius: 12px 12px 22px 22px;
+      background: linear-gradient(#c88044 0 45%, #f5f5ef 45% 100%);
+      border: 2px solid rgba(16, 60, 58, 0.18);
+    }
+
+    .phone-lines {
+      display: grid;
+      gap: 12px;
+    }
+
+    .line {
+      height: 16px;
+      border-radius: 6px;
+      background: var(--mint);
+    }
+
+    .line.short {
+      width: 66%;
+    }
+
+    .phone-cta {
+      background: var(--teal);
+      border-radius: 8px;
+    }
+
+    .grid-2,
+    .grid-3 {
+      display: grid;
+      gap: 20px;
+      align-self: center;
+    }
+
+    .grid-2 {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .card {
+      min-height: 190px;
+      border-radius: 8px;
+      border: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.82);
+      padding: 24px;
+      display: grid;
+      align-content: start;
+      gap: 12px;
+    }
+
+    .card strong {
+      font-size: 25px;
+      color: var(--deep);
+    }
+
+    .card span {
+      color: var(--muted);
+      font-size: 19px;
+      line-height: 1.4;
+    }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 14px;
+      align-items: stretch;
+      align-self: center;
+    }
+
+    .step {
+      border-radius: 8px;
+      padding: 22px;
+      min-height: 170px;
+      border: 1px solid var(--line);
+      background: white;
+      display: grid;
+      align-content: start;
+      gap: 14px;
+    }
+
+    .step b {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background: var(--teal);
+      color: white;
+      display: grid;
+      place-items: center;
+      font-size: 18px;
+    }
+
+    .step span {
+      font-size: 20px;
+      line-height: 1.3;
+    }
+
+    .architecture {
+      display: grid;
+      gap: 16px;
+      align-self: center;
+      max-width: 880px;
+    }
+
+    .layer {
+      border-radius: 8px;
+      padding: 24px 28px;
+      border: 1px solid var(--line);
+      background: white;
+      display: flex;
+      justify-content: space-between;
+      gap: 24px;
+      align-items: center;
+      font-size: 25px;
+      font-weight: 800;
+      color: var(--deep);
+    }
+
+    .layer span {
+      font-size: 18px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 18px;
+      align-self: center;
+    }
+
+    .metric {
+      padding: 26px;
+      border-radius: 8px;
+      background: var(--deep);
+      color: white;
+    }
+
+    .metric b {
+      display: block;
+      font-size: 42px;
+      color: var(--amber);
+      margin-bottom: 8px;
+    }
+
+    .metric span {
+      font-size: 18px;
+      line-height: 1.35;
+    }
+
+    .footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--muted);
+      font-size: 14px;
+      border-top: 1px solid rgba(0, 150, 136, 0.16);
+      padding-top: 14px;
+    }
+
+    .progress {
+      width: 180px;
+      height: 6px;
+      border-radius: 999px;
+      background: #dcebe7;
+      overflow: hidden;
+    }
+
+    .progress span {
+      display: block;
+      height: 100%;
+      width: 0;
+      background: linear-gradient(90deg, var(--teal), var(--amber));
+    }
+
+    .controls {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      display: flex;
+      gap: 8px;
+      z-index: 5;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--deep);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    @media (max-width: 820px) {
+      body {
+        overflow: auto;
+      }
+
+      .deck,
+      .slide {
+        min-height: 100vh;
+        height: auto;
+      }
+
+      .slide {
+        padding: 32px 22px 86px;
+      }
+
+      .hero,
+      .grid-2,
+      .grid-3,
+      .flow,
+      .metrics {
+        grid-template-columns: 1fr;
+      }
+
+      .visual {
+        min-height: 260px;
+      }
+
+      .phone {
+        transform: scale(0.75);
+      }
+
+      li,
+      p {
+        font-size: 19px;
+      }
+    }
+
+    @media print {
+      body {
+        overflow: visible;
+        background: white;
+      }
+
+      .deck,
+      .slide {
+        position: static;
+        display: block;
+        width: 100%;
+        height: 100vh;
+        page-break-after: always;
+      }
+
+      .controls {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="deck" aria-live="polite">
+    <section class="slide active">
+      <div>
+        <div class="kicker">Multi-Branch Restaurant Management System</div>
+        <h1>Tos Nham App</h1>
+      </div>
+      <div class="hero">
+        <div>
+          <p>
+            A Flutter mobile application for restaurant customers and staff:
+            branch browsing, table reservations, QR check-in, online ordering,
+            payment tracking, and customer reviews.
+          </p>
+        </div>
+        <div class="visual" aria-label="Mobile app preview illustration">
+          <div class="phone">
+            <div class="phone-bar"></div>
+            <div class="phone-img"></div>
+            <div class="phone-lines">
+              <div class="line"></div>
+              <div class="line short"></div>
+              <div class="line"></div>
+              <div class="line short"></div>
+            </div>
+            <div class="phone-cta"></div>
+          </div>
+        </div>
+      </div>
+      <footer class="footer"><span>Presentation Deck</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Project Problem</div>
+        <h2>Restaurant operations need a single digital flow</h2>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <ul>
+            <li>Manual reservations can create fake bookings and wasted tables.</li>
+            <li>Customers need a simple way to browse, reserve, order, and pay.</li>
+            <li>Staff need fast access to reservations, orders, and payment status.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <ul>
+            <li>Multi-branch restaurants need branch-specific menus and operations.</li>
+            <li>Payment confirmation should be visible to the team.</li>
+            <li>Customer feedback should update the menu experience immediately.</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>Why This App Matters</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Solution</div>
+        <h2>A mobile-first restaurant management platform</h2>
+      </div>
+      <div class="grid-3">
+        <div class="card">
+          <strong>Customers</strong>
+          <span>Browse branches and menus, add items to cart, book tables, pay deposits, and track orders.</span>
+        </div>
+        <div class="card">
+          <strong>Staff</strong>
+          <span>Scan reservation QR codes, manage reservations, view orders, and update order status.</span>
+        </div>
+        <div class="card">
+          <strong>Admins</strong>
+          <span>Manage branches, menus, payments, reservations, online orders, and reports.</span>
+        </div>
+      </div>
+      <footer class="footer"><span>Core Idea</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Objectives</div>
+        <h2>What the system is designed to improve</h2>
+      </div>
+      <div class="metrics">
+        <div class="metric"><b>01</b><span>Reduce customer waiting time.</span></div>
+        <div class="metric"><b>02</b><span>Prevent fake reservations using deposits.</span></div>
+        <div class="metric"><b>03</b><span>Secure table check-in with QR scanning.</span></div>
+        <div class="metric"><b>04</b><span>Centralize branch, menu, order, and payment workflows.</span></div>
+      </div>
+      <footer class="footer"><span>Project Goals</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Customer Journey</div>
+        <h2>From discovery to payment</h2>
+      </div>
+      <div class="flow">
+        <div class="step"><b>1</b><span>Register or log in</span></div>
+        <div class="step"><b>2</b><span>Select restaurant branch</span></div>
+        <div class="step"><b>3</b><span>Browse menu and add items</span></div>
+        <div class="step"><b>4</b><span>Reserve table or order online</span></div>
+        <div class="step"><b>5</b><span>Pay, upload receipt, and track status</span></div>
+      </div>
+      <footer class="footer"><span>User Flow</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Reservation Flow</div>
+        <h2>Deposit and QR check-in reduce reservation risk</h2>
+      </div>
+      <div class="flow">
+        <div class="step"><b>1</b><span>Customer selects branch, table, date, and time</span></div>
+        <div class="step"><b>2</b><span>System calculates 50 percent deposit</span></div>
+        <div class="step"><b>3</b><span>Customer pays using KHQR flow</span></div>
+        <div class="step"><b>4</b><span>Reservation QR code is generated</span></div>
+        <div class="step"><b>5</b><span>Staff scans QR when customer arrives</span></div>
+      </div>
+      <footer class="footer"><span>Table Booking</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Online Ordering</div>
+        <h2>Cart, checkout, payment, and status tracking</h2>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <ul>
+            <li>Customers select menu items from one branch.</li>
+            <li>The app validates item availability and quantities.</li>
+            <li>Orders can be paid using KHQR or handled with cash flow.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <ul>
+            <li>Staff views incoming orders in the operational dashboard.</li>
+            <li>Order status moves through pending, preparing, ready, and completed.</li>
+            <li>Payment receipt state supports pending, verified, and rejected.</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>Ordering Workflow</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">System Architecture</div>
+        <h2>Frontend, API, and database layers</h2>
+      </div>
+      <div class="architecture">
+        <div class="layer">Flutter Frontend <span>Customer and staff mobile screens</span></div>
+        <div class="layer">REST API <span>Node.js and Express service layer</span></div>
+        <div class="layer">Authentication <span>JWT, role-based access, branch separation</span></div>
+        <div class="layer">Database <span>Users, branches, menus, carts, reservations, orders, payments, reviews</span></div>
+      </div>
+      <footer class="footer"><span>Technical Design</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Tech Stack</div>
+        <h2>Tools and packages used</h2>
+      </div>
+      <div class="grid-3">
+        <div class="card">
+          <strong>Frontend</strong>
+          <span>Flutter, Dart, Material UI, localizations, responsive mobile screens.</span>
+        </div>
+        <div class="card">
+          <strong>Integration</strong>
+          <span>HTTP REST calls, shared preferences, QR generation, QR scanning, image picker.</span>
+        </div>
+        <div class="card">
+          <strong>Backend</strong>
+          <span>Node.js, Express, JWT, file upload, payment verification, database persistence.</span>
+        </div>
+      </div>
+      <footer class="footer"><span>Implementation Stack</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Recent Improvement</div>
+        <h2>Realtime menu rating summary</h2>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <ul>
+            <li>Before: review submission worked, but the average rating stayed stale until refresh.</li>
+            <li>Cause: the screen updated the review list but did not refresh the displayed aggregate rating.</li>
+            <li>Impact: users saw inconsistent rating count and average value.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <ul>
+            <li>Now: after submit, the screen awaits the latest detail data.</li>
+            <li>The UI syncs average rating and total ratings from the API.</li>
+            <li>If aggregate fields are missing, the screen computes them from review ratings.</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>Rating Fix</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Benefits</div>
+        <h2>Value for restaurants and customers</h2>
+      </div>
+      <div class="grid-2">
+        <div class="card">
+          <strong>For Restaurants</strong>
+          <span>Better table planning, fewer fake bookings, clearer staff operations, and centralized branch data.</span>
+        </div>
+        <div class="card">
+          <strong>For Customers</strong>
+          <span>Faster reservations, easier ordering, transparent payment status, and better menu confidence through reviews.</span>
+        </div>
+      </div>
+      <footer class="footer"><span>Project Value</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Future Improvements</div>
+        <h2>Next steps</h2>
+      </div>
+      <div class="grid-2">
+        <div class="panel">
+          <ul>
+            <li>Realtime payment verification through ABA or Bakong webhook support.</li>
+            <li>Push notifications for reservation and order updates.</li>
+            <li>Delivery tracking for online orders.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <ul>
+            <li>Loyalty and reward program for returning customers.</li>
+            <li>Admin analytics dashboard for sales and branch performance.</li>
+            <li>More complete Khmer and English language coverage.</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>Roadmap</span><span class="page"></span></footer>
+    </section>
+
+    <section class="slide">
+      <div>
+        <div class="kicker">Conclusion</div>
+        <h2>Tos Nham connects reservation, ordering, payment, and operations in one app</h2>
+      </div>
+      <div class="hero">
+        <p>
+          The system improves the restaurant experience for both customers and
+          staff by making core workflows faster, more trackable, and easier to manage
+          across multiple branches.
+        </p>
+        <div class="panel">
+          <ul>
+            <li>Customer app for booking and ordering.</li>
+            <li>Staff tools for QR check-in and order management.</li>
+            <li>Admin support for branch, menu, payment, and reporting control.</li>
+          </ul>
+        </div>
+      </div>
+      <footer class="footer"><span>Thank You</span><span class="page"></span></footer>
+    </section>
+  </main>
+
+  <div class="controls" aria-label="Slide controls">
+    <button type="button" id="prev">Prev</button>
+    <button type="button" id="next">Next</button>
+  </div>
+
+  <script>
+    const slides = Array.from(document.querySelectorAll(".slide"));
+    let index = 0;
+
+    function render() {
+      slides.forEach((slide, i) => {
+        slide.classList.toggle("active", i === index);
+        const page = slide.querySelector(".page");
+        if (page) {
+          page.textContent = `${i + 1} / ${slides.length}`;
+        }
+      });
+    }
+
+    function move(delta) {
+      index = Math.max(0, Math.min(slides.length - 1, index + delta));
+      render();
+    }
+
+    document.getElementById("prev").addEventListener("click", () => move(-1));
+    document.getElementById("next").addEventListener("click", () => move(1));
+
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowRight" || event.key === " ") move(1);
+      if (event.key === "ArrowLeft") move(-1);
+      if (event.key === "Home") {
+        index = 0;
+        render();
+      }
+      if (event.key === "End") {
+        index = slides.length - 1;
+        render();
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

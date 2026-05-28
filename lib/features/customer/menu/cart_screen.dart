@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../core/config/api_config.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/utils/auth_guard.dart';
 import '../../../l10n/app_localizations.dart';
+import '../orders/order_online_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -14,6 +16,7 @@ class _CartScreenState extends State<CartScreen> {
   List cartItems = [];
   List branches = [];
   int? selectedBranchId;
+  final Set<int> selectedMenuItemIds = {};
   bool isLoading = true;
 
   final String logoUrl =
@@ -50,6 +53,10 @@ class _CartScreenState extends State<CartScreen> {
       setState(() {
         cartItems = items;
         branches = branchMap.values.toList();
+        final availableMenuItemIds = items.map(_menuItemId).whereType<int>();
+        selectedMenuItemIds.removeWhere(
+          (menuItemId) => !availableMenuItemIds.contains(menuItemId),
+        );
         isLoading = false;
       });
     } catch (e) {
@@ -62,13 +69,53 @@ class _CartScreenState extends State<CartScreen> {
   List get filteredItems {
     if (selectedBranchId == null) return cartItems;
     return cartItems.where((item) {
-      return item['menuItem']?['branch']?['id'] == selectedBranchId;
+      return _itemBranchId(item) == selectedBranchId;
     }).toList();
+  }
+
+  List get selectedFilteredItems {
+    return filteredItems.where(_isItemSelected).toList();
+  }
+
+  int? _menuItemId(dynamic item) {
+    final menuItemId = item['menuItem']?['id'];
+    if (menuItemId is int) return menuItemId;
+    return int.tryParse(menuItemId?.toString() ?? '');
+  }
+
+  int? _itemBranchId(dynamic item) {
+    final branchId = item['menuItem']?['branch']?['id'];
+    if (branchId is int) return branchId;
+    return int.tryParse(branchId?.toString() ?? '');
+  }
+
+  bool _isItemSelected(dynamic item) {
+    final menuItemId = _menuItemId(item);
+    return menuItemId != null && selectedMenuItemIds.contains(menuItemId);
+  }
+
+  void _toggleItemSelection(dynamic item) {
+    final menuItemId = _menuItemId(item);
+    if (menuItemId == null) return;
+
+    setState(() {
+      if (selectedMenuItemIds.contains(menuItemId)) {
+        selectedMenuItemIds.remove(menuItemId);
+      } else {
+        selectedMenuItemIds.add(menuItemId);
+      }
+    });
+  }
+
+  void _showAllBranches() {
+    setState(() {
+      selectedBranchId = null;
+    });
   }
 
   /// TOTAL PRICE
   double get total {
-    return filteredItems.fold(0.0, (sum, item) {
+    return selectedFilteredItems.fold(0.0, (sum, item) {
       final price =
           double.tryParse(item['menuItem']['price'].toString()) ?? 0.0;
       return sum + (price * item['quantity']);
@@ -108,6 +155,10 @@ class _CartScreenState extends State<CartScreen> {
       await ApiService.delete("/cart/${item['menuItem']['id']}");
       setState(() {
         cartItems.removeAt(originalIndex);
+        final menuItemId = _menuItemId(item);
+        if (menuItemId != null) {
+          selectedMenuItemIds.remove(menuItemId);
+        }
       });
       return;
     }
@@ -115,108 +166,55 @@ class _CartScreenState extends State<CartScreen> {
     updateQuantity(item, originalIndex, currentQty - 1);
   }
 
-  /// PAYMENT OPTIONS BOTTOM SHEET
-  void showPaymentOptions() {
-    final lang = AppLocalizations.of(context)!;
+  /// GO TO ORDER ONLINE
+  void goToOrderOnline() {
+    final selectedItems = selectedFilteredItems;
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFFE0F5F3),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    if (selectedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("Please check item to order"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    final selectedBranchIds =
+        selectedItems.map(_itemBranchId).whereType<int>().toSet();
+    final orderBranchId =
+        selectedBranchIds.length == 1 ? selectedBranchIds.first : null;
+
+    if (orderBranchId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text("Please choose items from one branch only"),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ),
+      );
+      return;
+    }
+
+    ensureLoggedIn(context).then((allowed) {
+      if (!allowed || !mounted) return;
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => OrderOnlineScreen(
+            selectedBranchId: orderBranchId,
+            selectedMenuItemIds:
+                selectedItems.map(_menuItemId).whereType<int>().toList(),
           ),
-          padding: const EdgeInsets.fromLTRB(24, 28, 24, 36),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Handle bar
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: Colors.teal.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-
-              Text(
-                lang.selectOption,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF00695C),
-                ),
-              ),
-
-              const SizedBox(height: 24),
-
-              // Booking button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF009688),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/booking');
-                  },
-                  child: Text(
-                    lang.booking,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // Order Online button
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF009688),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () {
-                    Navigator.pop(context);
-                    Navigator.pushNamed(context, '/order-online');
-                  },
-                  child: Text(
-                    lang.orderOnline,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
+        ),
+      );
+    });
   }
 
   @override
@@ -335,85 +333,117 @@ class _CartScreenState extends State<CartScreen> {
                     ],
                   ),
                   const SizedBox(height: 10),
-                  Theme(
-                    data: Theme.of(context).copyWith(canvasColor: Colors.white),
-                    child: DropdownButtonFormField<int>(
-                      value: selectedBranchId,
-                      isExpanded: true,
-                      menuMaxHeight: 260,
-                      borderRadius: BorderRadius.circular(12),
-                      dropdownColor: Colors.white,
-                      decoration: InputDecoration(
-                        hintText: 'Select branch',
-                        hintStyle: const TextStyle(
-                          color: Color(0xFF6B8D89),
-                          fontWeight: FontWeight.w600,
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.location_city_outlined,
-                          color: Color(0xFF009688),
-                          size: 20,
-                        ),
-                        suffixIcon: const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          color: Color(0xFF009688),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFE8F5F4),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 14,
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(
-                            color: const Color(0xFF009688).withOpacity(0.35),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF009688),
-                            width: 1.4,
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Theme(
+                          data: Theme.of(context)
+                              .copyWith(canvasColor: Colors.white),
+                          child: DropdownButtonFormField<int>(
+                            value: selectedBranchId,
+                            isExpanded: true,
+                            menuMaxHeight: 260,
+                            borderRadius: BorderRadius.circular(12),
+                            dropdownColor: Colors.white,
+                            decoration: InputDecoration(
+                              hintText: 'Select branch',
+                              hintStyle: const TextStyle(
+                                color: Color(0xFF6B8D89),
+                                fontWeight: FontWeight.w600,
+                              ),
+                              prefixIcon: const Icon(
+                                Icons.location_city_outlined,
+                                color: Color(0xFF009688),
+                                size: 20,
+                              ),
+                              suffixIcon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                                color: Color(0xFF009688),
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFE8F5F4),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 14,
+                                vertical: 14,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: BorderSide(
+                                  color:
+                                      const Color(0xFF009688).withOpacity(0.35),
+                                ),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(12),
+                                borderSide: const BorderSide(
+                                  color: Color(0xFF009688),
+                                  width: 1.4,
+                                ),
+                              ),
+                            ),
+                            icon: const SizedBox.shrink(),
+                            items:
+                                branches.map<DropdownMenuItem<int>>((branch) {
+                              final int id = branch['id'];
+                              final bool isSelected = selectedBranchId == id;
+                              return DropdownMenuItem<int>(
+                                value: id,
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        branch['branch_name'],
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          color: isSelected
+                                              ? const Color(0xFF00796B)
+                                              : const Color(0xFF2F3B3A),
+                                        ),
+                                      ),
+                                    ),
+                                    if (isSelected)
+                                      const Icon(
+                                        Icons.check_circle,
+                                        size: 16,
+                                        color: Color(0xFF009688),
+                                      ),
+                                  ],
+                                ),
+                              );
+                            }).toList(),
+                            onChanged: (value) {
+                              setState(() {
+                                selectedBranchId = value;
+                              });
+                            },
                           ),
                         ),
                       ),
-                      icon: const SizedBox.shrink(),
-                      items: branches.map<DropdownMenuItem<int>>((branch) {
-                        final int id = branch['id'];
-                        final bool isSelected = selectedBranchId == id;
-                        return DropdownMenuItem<int>(
-                          value: id,
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  branch['branch_name'],
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    color: isSelected
-                                        ? const Color(0xFF00796B)
-                                        : const Color(0xFF2F3B3A),
-                                  ),
-                                ),
-                              ),
-                              if (isSelected)
-                                const Icon(
-                                  Icons.check_circle,
-                                  size: 16,
-                                  color: Color(0xFF009688),
-                                ),
-                            ],
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        height: 56,
+                        child: OutlinedButton.icon(
+                          onPressed: _showAllBranches,
+                          icon: Icon(
+                            selectedBranchId == null
+                                ? Icons.check_circle
+                                : Icons.select_all,
+                            size: 18,
                           ),
-                        );
-                      }).toList(),
-                      onChanged: (value) {
-                        setState(() {
-                          selectedBranchId = value;
-                        });
-                      },
-                    ),
+                          label: const Text("All"),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF009688),
+                            side: BorderSide(
+                              color: const Color(0xFF009688).withOpacity(0.45),
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
 
                   const SizedBox(height: 16),
@@ -438,6 +468,7 @@ class _CartScreenState extends State<CartScreen> {
                             final qty = item['quantity'];
                             final index = filteredItems.indexOf(item);
                             final imageUrl = buildImageUrl(menu['image']);
+                            final isSelected = _isItemSelected(item);
 
                             return Container(
                               margin: const EdgeInsets.only(bottom: 14),
@@ -461,6 +492,36 @@ class _CartScreenState extends State<CartScreen> {
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.center,
                                   children: [
+                                    GestureDetector(
+                                      onTap: () => _toggleItemSelection(item),
+                                      child: Container(
+                                        width: 30,
+                                        height: 30,
+                                        margin: const EdgeInsets.only(right: 8),
+                                        decoration: BoxDecoration(
+                                          shape: BoxShape.circle,
+                                          color: isSelected
+                                              ? const Color(0xFF009688)
+                                              : Colors.white,
+                                          border: Border.all(
+                                            color: isSelected
+                                                ? const Color(0xFF009688)
+                                                : const Color(0xFFB8DAD6),
+                                            width: 1.5,
+                                          ),
+                                        ),
+                                        child: Icon(
+                                          isSelected
+                                              ? Icons.check
+                                              : Icons.check_outlined,
+                                          color: isSelected
+                                              ? Colors.white
+                                              : const Color(0xFF80B9B3),
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ),
+
                                     /// FOOD IMAGE
                                     ClipRRect(
                                       borderRadius: BorderRadius.circular(10),
@@ -675,9 +736,9 @@ class _CartScreenState extends State<CartScreen> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            onPressed: filteredItems.isEmpty
+                            onPressed: selectedFilteredItems.isEmpty
                                 ? null
-                                : showPaymentOptions,
+                                : goToOrderOnline,
                             child: Text(
                               lang.payNow,
                               style: const TextStyle(

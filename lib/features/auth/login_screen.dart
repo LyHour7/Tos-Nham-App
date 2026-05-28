@@ -145,7 +145,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       width: double.infinity,
                       margin: const EdgeInsets.only(left: 34),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
+                        horizontal: 40,
                         vertical: 14,
                       ),
                       decoration: const BoxDecoration(color: teal),

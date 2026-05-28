@@ -9,6 +9,8 @@ class QRPaymentScreen extends StatefulWidget {
   final String md5;
   final int orderId;
   final String total;
+  final int? branchId;
+  final List<int> selectedMenuItemIds;
 
   const QRPaymentScreen({
     super.key,
@@ -16,6 +18,8 @@ class QRPaymentScreen extends StatefulWidget {
     required this.md5,
     required this.orderId,
     required this.total,
+    this.branchId,
+    this.selectedMenuItemIds = const [],
   });
 
   @override
@@ -66,9 +70,26 @@ class _QRPaymentScreenState extends State<QRPaymentScreen> {
       // Fetch all cart items first
       final cartResponse = await ApiService.get("/cart");
       final cartItems = cartResponse['data']['cartItems'] ?? [];
+      final selectedIds = widget.selectedMenuItemIds.toSet();
+      final itemsToDelete = cartItems.where((item) {
+        final menuItemId = item['menuItem']?['id'];
+        final parsedMenuItemId = menuItemId is int
+            ? menuItemId
+            : int.tryParse(menuItemId?.toString() ?? '');
 
-      // Delete each item individually
-      for (var item in cartItems) {
+        if (selectedIds.isNotEmpty && !selectedIds.contains(parsedMenuItemId)) {
+          return false;
+        }
+
+        if (widget.branchId == null) return true;
+
+        final branchId = item['menuItem']?['branch']?['id'];
+        if (branchId is int) return branchId == widget.branchId;
+        return int.tryParse(branchId?.toString() ?? '') == widget.branchId;
+      }).toList();
+
+      // Delete only the cart items that were paid for.
+      for (var item in itemsToDelete) {
         try {
           await ApiService.delete("/cart/${item['menuItem']['id']}");
         } catch (e) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/config/api_config.dart';
 import '../../../core/services/api_service.dart';
 import '../../../core/services/auth_service.dart';
+import '../../../core/utils/auth_guard.dart';
 import '../widgets/bottom_nav_bar.dart';
 
 class MenuDetailScreen extends StatefulWidget {
@@ -44,8 +45,12 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
         double.tryParse(widget.item['average_rating']?.toString() ?? '0') ?? 0;
     totalRatingsCount =
         int.tryParse(widget.item['total_ratings']?.toString() ?? '0') ?? 0;
-    _loadCurrentUser();
-    _loadReviews();
+    _initializeDetails();
+  }
+
+  Future<void> _initializeDetails() async {
+    await _loadCurrentUser();
+    await _loadReviews();
   }
 
   Future<void> _loadCurrentUser() async {
@@ -119,11 +124,81 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
     }
   }
 
+  Map<String, dynamic>? _extractMenuItem(dynamic response) {
+    if (response is! Map) return null;
+
+    dynamic data = response['data'] ?? response;
+    if (data is Map && data['item'] is Map) {
+      data = data['item'];
+    } else if (data is Map && data['menuItem'] is Map) {
+      data = data['menuItem'];
+    }
+
+    if (data is Map) return Map<String, dynamic>.from(data);
+    return null;
+  }
+
+  bool _syncRatingSummary(Map<String, dynamic> itemData) {
+    final averageRaw = itemData['average_rating'] ??
+        itemData['averageRating'] ??
+        itemData['avg_rating'] ??
+        itemData['avgRating'];
+    final totalRaw = itemData['total_ratings'] ??
+        itemData['totalRatings'] ??
+        itemData['rating_count'] ??
+        itemData['ratings_count'];
+    var updated = false;
+
+    if (averageRaw != null) {
+      final parsedAverage = double.tryParse(averageRaw.toString());
+      if (parsedAverage != null) {
+        averageRating = parsedAverage;
+        widget.item['average_rating'] = parsedAverage;
+        updated = true;
+      }
+    }
+
+    if (totalRaw != null) {
+      final parsedTotal = int.tryParse(totalRaw.toString());
+      if (parsedTotal != null) {
+        totalRatingsCount = parsedTotal;
+        widget.item['total_ratings'] = parsedTotal;
+        updated = true;
+      }
+    }
+
+    return updated;
+  }
+
+  bool _syncRatingSummaryFromReviews(List rawReviews) {
+    var ratingCount = 0;
+    var totalScore = 0;
+
+    for (final raw in rawReviews) {
+      if (raw is! Map) continue;
+      final rating = int.tryParse(raw['rating']?.toString() ?? '0') ?? 0;
+      if (rating <= 0) continue;
+
+      ratingCount += 1;
+      totalScore += rating;
+    }
+
+    if (ratingCount == 0) return false;
+
+    averageRating = totalScore / ratingCount;
+    totalRatingsCount = ratingCount;
+    widget.item['average_rating'] = averageRating;
+    widget.item['total_ratings'] = totalRatingsCount;
+    return true;
+  }
+
   Future<void> _submitRating() async {
     if (selectedRating < 1 || selectedRating > 5) return;
     final reviewText = reviewController.text.trim();
+    final wasRated = hasRatedThisItem;
+    final submittedRating = selectedRating;
 
-    if (hasRatedThisItem && reviewText.isEmpty) {
+    if (wasRated && reviewText.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content:
@@ -141,26 +216,36 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
 
     try {
       final payload = <String, dynamic>{'review': reviewText};
-      if (!hasRatedThisItem) payload['rating'] = selectedRating;
+      if (!wasRated) payload['rating'] = submittedRating;
 
-      await ApiService.post('/menu/items/${widget.item['id']}/rate', payload);
+      final response = await ApiService.post(
+          '/menu/items/${widget.item['id']}/rate', payload);
 
       if (!mounted) return;
 
       setState(() {
-        if (!hasRatedThisItem) {
-          final totalScore =
-              (averageRating * totalRatingsCount) + selectedRating;
-          totalRatingsCount += 1;
-          averageRating =
-              totalRatingsCount == 0 ? 0 : totalScore / totalRatingsCount;
+        final updatedItem = _extractMenuItem(response);
+        final hasServerSummary =
+            updatedItem != null && _syncRatingSummary(updatedItem);
+
+        if (!wasRated) {
+          if (!hasServerSummary) {
+            final totalScore =
+                (averageRating * totalRatingsCount) + submittedRating;
+            totalRatingsCount += 1;
+            averageRating =
+                totalRatingsCount == 0 ? 0 : totalScore / totalRatingsCount;
+            widget.item['average_rating'] = averageRating;
+            widget.item['total_ratings'] = totalRatingsCount;
+          }
           hasRatedThisItem = true;
-          myRating = selectedRating;
+          myRating = submittedRating;
+          selectedRating = submittedRating;
         }
         if (reviewText.isNotEmpty) {
           reviews.insert(0, {
             'review': reviewText,
-            'rating': !hasRatedThisItem ? selectedRating : myRating,
+            'rating': wasRated ? myRating : submittedRating,
             'user': {'name': 'You'},
             'user_id': currentUserId,
             'createdAt': DateTime.now().toIso8601String(),
@@ -169,8 +254,9 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
       });
 
       reviewController.clear();
-      _loadReviews();
+      await _loadReviews();
 
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Row(children: [
@@ -203,29 +289,27 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
   }
 
   Future<void> _loadReviews() async {
+    if (!mounted) return;
     setState(() => isLoadingReviews = true);
     try {
       final response = await ApiService.get('/menu/items/${widget.item['id']}');
 
-      dynamic data = response['data'];
-      if (data is Map && data['item'] is Map) {
-        data = data['item'];
-      } else if (data is Map && data['menuItem'] is Map) {
-        data = data['menuItem'];
-      }
+      final data = _extractMenuItem(response);
 
       List rawReviews = [];
-      if (data is Map && data['reviews'] is List) {
+      if (data != null && data['reviews'] is List) {
         rawReviews = data['reviews'];
-      } else if (response['data'] is Map &&
-          response['data']['reviews'] is List) {
-        rawReviews = response['data']['reviews'];
+      } else {
+        final responseData = response is Map ? response['data'] : null;
+        if (responseData is Map && responseData['reviews'] is List) {
+          rawReviews = responseData['reviews'];
+        }
       }
 
       bool rated = false;
       int ratingValue = 0;
-      final hasRatedFromApi = data is Map && data['has_rated'] == true;
-      final apiRatingRaw = data is Map ? data['my_rating'] : null;
+      final hasRatedFromApi = data != null && data['has_rated'] == true;
+      final apiRatingRaw = data?['my_rating'];
 
       if (hasRatedFromApi) {
         rated = true;
@@ -248,6 +332,8 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
 
       if (!mounted) return;
       setState(() {
+        final hasSummary = data != null && _syncRatingSummary(data);
+        if (!hasSummary) _syncRatingSummaryFromReviews(rawReviews);
         reviews = rawReviews
             .whereType<Map>()
             .map((r) => Map<String, dynamic>.from(r))
@@ -1092,6 +1178,9 @@ class _MenuDetailScreenState extends State<MenuDetailScreen> {
                 GestureDetector(
                   onTap: isAvailable
                       ? () async {
+                          final allowed = await ensureLoggedIn(context);
+                          if (!allowed) return;
+
                           await ApiService.post("/cart", {
                             "menu_item_id": item['id'],
                             "quantity": quantity,

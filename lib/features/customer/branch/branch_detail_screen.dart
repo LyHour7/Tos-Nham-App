@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:tos_nham_app/features/customer/menu/menu_detail_screen.dart';
 import '../../../core/config/api_config.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/utils/auth_guard.dart';
 
 class BranchDetailScreen extends StatefulWidget {
   final int branchId;
@@ -25,7 +26,12 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
 
   static const Color teal = Color(0xFF009688);
   static const Color tealLight = Color(0xFFE0F2F1);
-  static const Color tealDark = Color(0xFF00695C);
+  static const Color readableText = Color(0xFF111111);
+  static const List<String> khmerFontFallback = [
+    'Noto Sans Khmer',
+    'Khmer OS Battambang',
+    'Roboto',
+  ];
 
   final String logoUrl =
       "https://rulggijojszaxotcqkjd.supabase.co/storage/v1/object/public/app-assets/logo.png";
@@ -122,7 +128,10 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                   width: double.infinity,
                   margin: const EdgeInsets.only(left: 36),
                   padding: const EdgeInsets.only(
-                    left: 52, right: 16, top: 14, bottom: 14,
+                    left: 52,
+                    right: 16,
+                    top: 14,
+                    bottom: 14,
                   ),
                   decoration: const BoxDecoration(color: Color(0xFF008F99)),
                   child: Row(
@@ -225,9 +234,10 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                       child: Text(
                         isAll ? "All" : category['name'],
                         style: TextStyle(
-                          color: isSelected ? Colors.white : tealDark,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 13,
+                          color: isSelected ? Colors.white : readableText,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                          fontFamilyFallback: khmerFontFallback,
                         ),
                       ),
                     ),
@@ -317,10 +327,13 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                                       child: Text(
                                         item['name'],
                                         style: const TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 13,
-                                          color: tealDark,
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 14,
+                                          color: readableText,
+                                          fontFamilyFallback: khmerFontFallback,
                                         ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                       ),
                                     ),
 
@@ -377,6 +390,10 @@ class _BranchDetailScreenState extends State<BranchDetailScreen> {
                                   GestureDetector(
                                     onTap: isAvailable
                                         ? () async {
+                                            final allowed =
+                                                await ensureLoggedIn(context);
+                                            if (!allowed) return;
+
                                             try {
                                               await ApiService.post(
                                                 "/cart",

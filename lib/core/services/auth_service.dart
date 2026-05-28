@@ -97,7 +97,22 @@ class AuthService {
       final data = jsonDecode(response.body);
 
       if (response.statusCode == 201) {
-        return {"success": true};
+        final token = data['data']?['token'];
+        final userData = data['data']?['user'];
+
+        if (token != null && userData != null) {
+          final user = User.fromJson(userData);
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('token', token);
+          await prefs.setString('user', jsonEncode(user.toJson()));
+          await prefs.setString('role', user.role);
+        }
+
+        return {
+          "success": true,
+          "token": token,
+          "user": userData,
+        };
       } else {
         return {
           "success": false,

@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../../core/services/api_service.dart';
+import '../../../core/utils/auth_guard.dart';
 import 'qr_payment_screen.dart';
 
 class OrderOnlineScreen extends StatefulWidget {
-  const OrderOnlineScreen({super.key});
+  final int? selectedBranchId;
+  final List<int> selectedMenuItemIds;
+
+  const OrderOnlineScreen({
+    super.key,
+    this.selectedBranchId,
+    this.selectedMenuItemIds = const [],
+  });
 
   @override
   State<OrderOnlineScreen> createState() => _OrderOnlineScreenState();
@@ -52,8 +60,9 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
   Future<void> fetchCartItems() async {
     try {
       final data = await ApiService.get("/cart");
+      final cartItems = data['data']['cartItems'] ?? [];
       setState(() {
-        items = data['data']['cartItems'] ?? [];
+        items = _filterItemsByBranch(cartItems);
         isLoading = false;
       });
     } catch (e) {
@@ -61,10 +70,35 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
     }
   }
 
+  int? _itemBranchId(dynamic item) {
+    final branchId = item['menuItem']?['branch']?['id'];
+    if (branchId is int) return branchId;
+    return int.tryParse(branchId?.toString() ?? '');
+  }
+
+  List _filterItemsByBranch(List cartItems) {
+    final selectedIds = widget.selectedMenuItemIds.toSet();
+
+    return cartItems.where((item) {
+      final menuItemId = _menuItemId(item);
+      if (selectedIds.isNotEmpty && !selectedIds.contains(menuItemId)) {
+        return false;
+      }
+
+      if (widget.selectedBranchId == null) return true;
+      return _itemBranchId(item) == widget.selectedBranchId;
+    }).toList();
+  }
+
+  int? _menuItemId(dynamic item) {
+    final menuItemId = item['menuItem']?['id'];
+    if (menuItemId is int) return menuItemId;
+    return int.tryParse(menuItemId?.toString() ?? '');
+  }
+
   double get total {
     return items.fold(0.0, (sum, item) {
-      final price =
-          double.tryParse(item['menuItem']['price'].toString()) ?? 0;
+      final price = double.tryParse(item['menuItem']['price'].toString()) ?? 0;
       return sum + (price * item['quantity']);
     });
   }
@@ -112,13 +146,17 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
   }
 
   Future<void> submitOrder() async {
+    final allowed = await ensureLoggedIn(context);
+    if (!allowed) return;
+
     if (locationController.text.isEmpty || phoneController.text.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text("Location & phone required"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
       return;
@@ -130,7 +168,8 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
           content: const Text("Cart is empty"),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
       return;
@@ -139,8 +178,14 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
     setState(() => isSubmitting = true);
 
     try {
+      final branchId = widget.selectedBranchId ?? _itemBranchId(items.first);
+
+      if (branchId == null) {
+        throw Exception("Missing branch for order");
+      }
+
       final response = await ApiService.post("/orders", {
-        "branch_id": items.first['menuItem']['branch']['id'],
+        "branch_id": branchId,
         "order_type": "delivery",
         "payment_method": paymentMethod,
         "items": items.map((item) {
@@ -158,10 +203,11 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
       });
 
       final order = response['data']['order'];
+      if (!mounted) return;
 
       if (paymentMethod == "qr_payment") {
         final payment = response['data']['payment'];
-        
+
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -170,13 +216,16 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
               md5: payment['md5'],
               orderId: order['id'],
               total: order['total_amount'],
+              branchId: branchId,
+              selectedMenuItemIds:
+                  items.map(_menuItemId).whereType<int>().toList(),
             ),
           ),
         );
       } else {
         // Cash payment - show success dialog
         if (!mounted) return;
-        
+
         showDialog(
           context: context,
           barrierDismissible: false,
@@ -269,17 +318,22 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
         );
       }
     } catch (e) {
+      if (!mounted) return;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: const Text("Order failed. Please try again."),
           backgroundColor: Colors.red,
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
         ),
       );
     }
 
-    setState(() => isSubmitting = false);
+    if (mounted) {
+      setState(() => isSubmitting = false);
+    }
   }
 
   Widget _inputField({
@@ -423,7 +477,8 @@ class _OrderOnlineScreenState extends State<OrderOnlineScreen> {
               ],
             ),
           ),
-const SizedBox(height: 10),
+          const SizedBox(height: 10),
+
           /// ============================
           /// SCROLLABLE BODY
           /// ============================
@@ -433,7 +488,6 @@ const SizedBox(height: 10),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-
                   /// MAP SECTION
                   _sectionLabel("Delivery Location", Icons.map_outlined),
 
@@ -596,8 +650,7 @@ const SizedBox(height: 10),
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(14),
-                      border:
-                          Border.all(color: teal.withOpacity(0.2)),
+                      border: Border.all(color: teal.withOpacity(0.2)),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withOpacity(0.04),
@@ -622,9 +675,9 @@ const SizedBox(height: 10),
                               final item = entry.value;
                               final menu = item['menuItem'];
                               final qty = item['quantity'];
-                              final price = double.tryParse(
-                                      menu['price'].toString()) ??
-                                  0;
+                              final price =
+                                  double.tryParse(menu['price'].toString()) ??
+                                      0;
                               final isLast = index == items.length - 1;
 
                               return Column(
@@ -752,7 +805,8 @@ const SizedBox(height: 10),
                       children: [
                         // QR Payment option
                         GestureDetector(
-                          onTap: () => setState(() => paymentMethod = "qr_payment"),
+                          onTap: () =>
+                              setState(() => paymentMethod = "qr_payment"),
                           child: Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 14,
@@ -778,7 +832,8 @@ const SizedBox(height: 10),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         "QR Payment",
@@ -862,7 +917,8 @@ const SizedBox(height: 10),
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       Text(
                                         "Cash on Delivery",
@@ -952,18 +1008,15 @@ const SizedBox(height: 10),
                             ),
                           ],
                         ),
-
                         GestureDetector(
                           onTap: isSubmitting ? null : submitOrder,
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 200),
                             height: 48,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 28),
+                            padding: const EdgeInsets.symmetric(horizontal: 28),
                             decoration: BoxDecoration(
-                              color: isSubmitting
-                                  ? teal.withOpacity(0.5)
-                                  : teal,
+                              color:
+                                  isSubmitting ? teal.withOpacity(0.5) : teal,
                               borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
